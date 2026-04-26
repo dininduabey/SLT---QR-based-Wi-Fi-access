@@ -51,23 +51,28 @@ const pfSenseApi = axios.create({
 export async function authorizeMacOnPfSense(
     macAddress: string, 
     ipAddress: string,
-    sessionDurationMinutes: number
+    sessionDurationMinutes?: number | null
 ): Promise<boolean> {
     // If no pfSense API key configured, run in mock mode
     if (!pfSenseConfig.apiKey) {
-        console.log(`[PFSENSE-MOCK] Would authorize MAC: ${macAddress}, IP: ${ipAddress} for ${sessionDurationMinutes} min`);
+        console.log(`[PFSENSE-MOCK] Would authorize MAC: ${macAddress}, IP: ${ipAddress} for ${sessionDurationMinutes ? sessionDurationMinutes + ' min' : 'unlimited'}`);
         return true;
     }
 
     try {
-        const response = await pfSenseApi.post('/api/v1/services/captiveportal/authorize', {
+        const payload: any = {
             zone: pfSenseConfig.cpZone,
             user: macAddress,              // Use MAC as username
             ip: ipAddress,                 // Client IP from the request
             mac: macAddress,
-            // Session timeout in seconds
-            timeout: sessionDurationMinutes * 60,
-        });
+        };
+
+        // Session timeout in seconds, omit if unlimited
+        if (sessionDurationMinutes) {
+            payload.timeout = sessionDurationMinutes * 60;
+        }
+
+        const response = await pfSenseApi.post('/api/v1/services/captiveportal/authorize', payload);
 
         console.log(`[PFSENSE] Authorized MAC: ${macAddress}, Response:`, response.data);
         return true;

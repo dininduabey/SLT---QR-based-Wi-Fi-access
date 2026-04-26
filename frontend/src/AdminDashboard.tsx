@@ -15,11 +15,11 @@ interface EventData {
         backgroundColor: string;
         termsUrl: string;
     };
-    policies: {
+    policies?: {
         bandwidthMbps: number;
         dataLimitMb: number;
         sessionDurationMinutes: number;
-    };
+    } | null;
 }
 
 interface SessionData {
@@ -102,6 +102,7 @@ function CreateEventTab() {
     const [status, setStatus] = useState<{ type: 'success' | 'error' | ''; message: string }>({ type: '', message: '' });
     const [isRegistering, setIsRegistering] = useState(false);
     const [showQr, setShowQr] = useState(false);
+    const [hasLimits, setHasLimits] = useState(true);
 
     // Portal Base URL: This is the address users will reach when scanning the QR.
     // In PRODUCTION: Set this to the pfSense walled garden server (e.g., https://wifi.slt.lk)
@@ -136,11 +137,11 @@ function CreateEventTab() {
                         backgroundColor: "#f4f7f6",
                         termsUrl: "#"
                     },
-                    policies: {
+                    policies: hasLimits ? {
                         bandwidthMbps,
                         dataLimitMb,
                         sessionDurationMinutes: sessionDuration,
-                    }
+                    } : null
                 })
             });
             const data = await res.json();
@@ -215,22 +216,28 @@ function CreateEventTab() {
 
                 {/* Policies */}
                 <div className="mt-5 pt-5 border-t border-slate-100">
-                    <h3 className="text-sm font-bold text-slate-700 mb-3">Wi-Fi Access Policies</h3>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-bold text-slate-700">Wi-Fi Access Policies</h3>
+                        <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                            <input type="checkbox" checked={hasLimits} onChange={e => setHasLimits(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500" />
+                            Set Access Limits
+                        </label>
+                    </div>
+                    <div className={`grid grid-cols-3 gap-4 transition-opacity ${hasLimits ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
                         <div>
                             <label className="block text-xs font-semibold text-slate-600 mb-1.5">Session Duration (min)</label>
-                            <input type="number" value={sessionDuration} onChange={e => setSessionDuration(Number(e.target.value))}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm" />
+                            <input type="number" value={sessionDuration} onChange={e => setSessionDuration(Number(e.target.value))} disabled={!hasLimits}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm disabled:bg-slate-50" />
                         </div>
                         <div>
                             <label className="block text-xs font-semibold text-slate-600 mb-1.5">Bandwidth (Mbps)</label>
-                            <input type="number" value={bandwidthMbps} onChange={e => setBandwidthMbps(Number(e.target.value))}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm" />
+                            <input type="number" value={bandwidthMbps} onChange={e => setBandwidthMbps(Number(e.target.value))} disabled={!hasLimits}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm disabled:bg-slate-50" />
                         </div>
                         <div>
                             <label className="block text-xs font-semibold text-slate-600 mb-1.5">Data Limit (MB)</label>
-                            <input type="number" value={dataLimitMb} onChange={e => setDataLimitMb(Number(e.target.value))}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm" />
+                            <input type="number" value={dataLimitMb} onChange={e => setDataLimitMb(Number(e.target.value))} disabled={!hasLimits}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm disabled:bg-slate-50" />
                         </div>
                     </div>
                 </div>
@@ -407,16 +414,16 @@ function ManageEventsTab() {
                     {/* Policies */}
                     <div className="grid grid-cols-3 gap-4 mb-6">
                         <div className="bg-slate-50 rounded-xl p-4 text-center">
-                            <p className="text-2xl font-bold text-slate-800">{event.policies.sessionDurationMinutes}</p>
-                            <p className="text-xs text-slate-500 font-medium">Minutes / Session</p>
+                            <p className="text-2xl font-bold text-slate-800">{event.policies?.sessionDurationMinutes || '∞'}</p>
+                            <p className="text-xs text-slate-500 font-medium">{event.policies?.sessionDurationMinutes ? 'Minutes / Session' : 'Unlimited Duration'}</p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-4 text-center">
-                            <p className="text-2xl font-bold text-slate-800">{event.policies.bandwidthMbps}</p>
-                            <p className="text-xs text-slate-500 font-medium">Mbps / User</p>
+                            <p className="text-2xl font-bold text-slate-800">{event.policies?.bandwidthMbps || '∞'}</p>
+                            <p className="text-xs text-slate-500 font-medium">{event.policies?.bandwidthMbps ? 'Mbps / User' : 'Unlimited Bandwidth'}</p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-4 text-center">
-                            <p className="text-2xl font-bold text-slate-800">{event.policies.dataLimitMb}</p>
-                            <p className="text-xs text-slate-500 font-medium">MB Data Limit</p>
+                            <p className="text-2xl font-bold text-slate-800">{event.policies?.dataLimitMb || '∞'}</p>
+                            <p className="text-xs text-slate-500 font-medium">{event.policies?.dataLimitMb ? 'MB Data Limit' : 'Unlimited Data'}</p>
                         </div>
                     </div>
 

@@ -173,21 +173,24 @@ app.post('/verify-otp', async (req: Request, res: Response): Promise<any> => {
         const eventData = eventDoc.data()!;
         if (eventData.status !== 'active') return res.status(403).json({ error: "Event is not active" });
 
-        const policies = eventData.policies || { sessionDurationMinutes: 60 };
+        const policies = eventData.policies;
 
         // 3. Authorize on pfSense — this is where the magic happens!
         // pfSense will add a firewall rule allowing this MAC/IP through
-        await authorizeMacOnPfSense(mac, clientIp, policies.sessionDurationMinutes);
+        await authorizeMacOnPfSense(mac, clientIp, policies?.sessionDurationMinutes);
 
         // 4. Create Session Record in DB
-        const sessionExpiresAt = new Date(Date.now() + policies.sessionDurationMinutes * 60000);
+        const sessionExpiresAt = policies?.sessionDurationMinutes 
+            ? new Date(Date.now() + policies.sessionDurationMinutes * 60000)
+            : null;
+
         const sessionRef = await db.collection('sessions').add({
             eventId,
             mobile,
             macAddress: mac,
             clientIp,
             startTime: admin.firestore.FieldValue.serverTimestamp(),
-            expiresAt: admin.firestore.Timestamp.fromDate(sessionExpiresAt),
+            expiresAt: sessionExpiresAt ? admin.firestore.Timestamp.fromDate(sessionExpiresAt) : null,
             status: 'active',
             dataUsageMb: 0
         });
