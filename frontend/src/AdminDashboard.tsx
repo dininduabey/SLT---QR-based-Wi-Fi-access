@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 
-const API_URL = `http://${window.location.hostname}:8080`;
+const API_URL = '/api';
 
 // ============================================================
 // Types

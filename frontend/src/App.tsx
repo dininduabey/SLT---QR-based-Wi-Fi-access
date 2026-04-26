@@ -5,8 +5,7 @@ import AdminDashboard from './AdminDashboard';
 // Dynamically resolve backend URL based on how the user reached this page.
 // If opened from 192.168.x.x:5173, API calls go to 192.168.x.x:8080
 // If opened from localhost:5173, API calls go to localhost:8080
-const API_URL = `http://${window.location.hostname}:8080`;
-
+const API_URL = '/api';
 const api = {
     getEventDetails: async (eventId: string) => {
         const res = await fetch(`${API_URL}/events/${eventId}`);
