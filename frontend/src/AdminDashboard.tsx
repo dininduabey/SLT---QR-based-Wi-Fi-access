@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 
 const API_URL = `http://${window.location.hostname}:8080`;
@@ -101,7 +101,6 @@ function CreateEventTab() {
     const [primaryColor, setPrimaryColor] = useState('#005c42');
     const [status, setStatus] = useState<{ type: 'success' | 'error' | ''; message: string }>({ type: '', message: '' });
     const [isRegistering, setIsRegistering] = useState(false);
-    const [showQr, setShowQr] = useState(false);
     const [hasLimits, setHasLimits] = useState(true);
 
     // Portal Base URL: This is the address users will reach when scanning the QR.
@@ -147,7 +146,6 @@ function CreateEventTab() {
             const data = await res.json();
             if (res.ok) {
                 setStatus({ type: 'success', message: `Event "${eventName}" created! QR code is ready below.` });
-                setShowQr(true);
             } else {
                 throw new Error(data.error || 'Failed to register event');
             }
@@ -319,7 +317,6 @@ function ManageEventsTab() {
     const [lookupId, setLookupId] = useState('');
     const [event, setEvent] = useState<EventData | null>(null);
     const [loadedEventId, setLoadedEventId] = useState('');
-    const [sessions, setSessions] = useState<SessionData[]>([]);
     const [loadError, setLoadError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isAdjourning, setIsAdjourning] = useState(false);
