@@ -22,16 +22,6 @@ interface EventData {
     } | null;
 }
 
-interface SessionData {
-    id: string;
-    mobile: string;
-    macAddress: string;
-    clientIp: string;
-    status: string;
-    startTime: string;
-    expiresAt: string;
-}
-
 // ============================================================
 // Admin Dashboard
 // ============================================================
