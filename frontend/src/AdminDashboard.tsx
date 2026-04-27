@@ -87,8 +87,6 @@ function CreateEventTab() {
     const [sessionDuration, setSessionDuration] = useState(120);
     const [bandwidthMbps, setBandwidthMbps] = useState(10);
     const [dataLimitMb, setDataLimitMb] = useState(500);
-    const [logoUrl, setLogoUrl] = useState('');
-    const [primaryColor, setPrimaryColor] = useState('#005c42');
     const [status, setStatus] = useState<{ type: 'success' | 'error' | ''; message: string }>({ type: '', message: '' });
     const [isRegistering, setIsRegistering] = useState(false);
     const [hasLimits, setHasLimits] = useState(true);
@@ -121,8 +119,8 @@ function CreateEventTab() {
                     eventId: eventId.trim(),
                     name: eventName.trim(),
                     branding: {
-                        logoUrl: logoUrl || "https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png",
-                        primaryColor,
+                        logoUrl: "https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png",
+                        primaryColor: "#005c42",
                         backgroundColor: "#f4f7f6",
                         termsUrl: "#"
                     },
@@ -230,27 +228,6 @@ function CreateEventTab() {
                     </div>
                 </div>
 
-                {/* Branding */}
-                <div className="mt-5 pt-5 border-t border-slate-100">
-                    <h3 className="text-sm font-bold text-slate-700 mb-3">Portal Branding</h3>
-                    <div className="grid md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Logo URL (optional)</label>
-                            <input type="url" value={logoUrl} onChange={e => setLogoUrl(e.target.value)}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
-                                placeholder="https://example.com/logo.png" />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Primary Color</label>
-                            <div className="flex gap-2 items-center">
-                                <input type="color" value={primaryColor} onChange={e => setPrimaryColor(e.target.value)}
-                                    className="w-10 h-10 rounded-lg border border-slate-200 cursor-pointer" />
-                                <input type="text" value={primaryColor} onChange={e => setPrimaryColor(e.target.value)}
-                                    className="flex-1 px-3 py-2 rounded-lg border border-slate-200 outline-none text-sm font-mono" />
-                            </div>
-                        </div>
-                    </div>
-                </div>
 
                 {/* Actions */}
                 <div className="mt-6 flex items-center gap-3">
@@ -389,11 +366,10 @@ function ManageEventsTab() {
                                 <p className="text-sm text-slate-500">ID: {loadedEventId}</p>
                             </div>
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
-                            event.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${event.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
                             event.status === 'adjourned' ? 'bg-red-100 text-red-700' :
-                            'bg-slate-100 text-slate-600'
-                        }`}>
+                                'bg-slate-100 text-slate-600'
+                            }`}>
                             {event.status}
                         </span>
                     </div>
