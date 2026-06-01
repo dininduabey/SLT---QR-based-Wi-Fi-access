@@ -236,7 +236,6 @@ const EventPortal = () => {
 };
 
 
-import { useEffect } from 'react';
 
 const RootRedirect = () => {
     useEffect(() => {
