@@ -201,6 +201,50 @@ app.post('/verify-otp', async (req: Request, res: Response): Promise<any> => {
 });
 
 // ---------------------------------------------------------
+// Landing page ?" redirects phone to the active event portal
+// ---------------------------------------------------------
+app.get('/landing', async (req: Request, res: Response): Promise<any> => {
+    try {
+        // Find the most recently created active event
+        const activeEvent = await EventModel.findOne(
+            { status: 'active' },
+            {},
+            { sort: { createdAt: -1 } }
+        );
+
+        if (!activeEvent) {
+            // No active event ?" show a friendly message
+            return res.send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <style>
+                        body { font-family: sans-serif; text-align: center; 
+                               padding: 60px 20px; background: #f4f7f6; }
+                        h2 { color: #005c42; }
+                        p { color: #666; }
+                    </style>
+                </head>
+                <body>
+                    <h2>No Active Event</h2>
+                    <p>There is no active Wi-Fi event at this time.<br>
+                    Please contact the event organizer.</p>
+                </body>
+                </html>
+            `);
+        }
+
+        // Redirect to the correct event portal page
+        return res.redirect(`/portal/${activeEvent.eventId}`);
+
+    } catch (error) {
+        console.error("Error in /landing:", error);
+        return res.status(500).send("Server error. Please try again.");
+    }
+});
+
+// ---------------------------------------------------------
 // Admin API: Create Event
 // ---------------------------------------------------------
 app.post('/admin/events', async (req: Request, res: Response): Promise<any> => {
