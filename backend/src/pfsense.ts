@@ -103,4 +103,3 @@ export async function revokeMacOnPfSense(macAddress: string): Promise<boolean> {
 export async function getConnectedClients(): Promise<any[]> {
     return [];
 }
-}
