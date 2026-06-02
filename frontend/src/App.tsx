@@ -22,15 +22,13 @@ const api = {
         if (!data.success) throw new Error(data.error);
         return data;
     },
-    verifyOtp: async (mobile: string, otp: string, eventId: string, mac: string) => {
-        const res = await fetch(`${API_URL}/verify-otp`, {
+    verifyOtp: async (mobile: string, otp: string, eventId: string, mac: string, cp_action: string) => {
+        // Return the raw response so caller can handle HTML or JSON
+        return await fetch(`${API_URL}/verify-otp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mobile, otp, eventId, macAddress: mac })
+            body: JSON.stringify({ mobile, otp, eventId, macAddress: mac, cp_action })
         });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error);
-        return data;
     }
 };
 
@@ -38,6 +36,7 @@ const EventPortal = () => {
     const { eventId } = useParams();
     const [searchParams] = useSearchParams();
     const macAddress = searchParams.get('mac') || 'unknown';
+    const cpAction = searchParams.get('cp_action') || '';
 
     const [eventDetails, setEventDetails] = useState<any>(null);
     const [mobile, setMobile] = useState('');
@@ -82,7 +81,17 @@ const EventPortal = () => {
         e.preventDefault();
         setIsLoading(true);
         try {
-            await api.verifyOtp(mobile, otp, eventId as string, macAddress);
+            const res = await api.verifyOtp(mobile, otp, eventId as string, macAddress, cpAction);
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('text/html')) {
+                const html = await res.text();
+                document.open();
+                document.write(html);
+                document.close();
+                return; // page will be replaced
+            }
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || 'Invalid OTP');
             setStep('SUCCESS');
             setErrorMsg('');
         } catch (error: any) {

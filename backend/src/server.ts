@@ -126,7 +126,7 @@ app.post('/request-otp', async (req: Request, res: Response): Promise<any> => {
 // ---------------------------------------------------------
 app.post('/verify-otp', async (req: Request, res: Response): Promise<any> => {
     try {
-        const { mobile, otp, eventId, macAddress } = req.body;
+        const { mobile, otp, eventId, macAddress, cp_action } = req.body;
         if (!mobile || !otp || !eventId) {
             return res.status(400).json({ error: "Missing required fields" });
         }
@@ -187,6 +187,32 @@ app.post('/verify-otp', async (req: Request, res: Response): Promise<any> => {
             clientIp
         }).save();
 
+        // If cp_action provided, return auto-submitting form for pfSense authorization
+        if (cp_action) {
+            return res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body{font-family:sans-serif;text-align:center;padding:60px 20px;background:#f4f7f6}
+    h2{color:#005c42}p{color:#666}
+  </style>
+</head>
+<body>
+  <h2>✓ Wi-Fi Access Granted</h2>
+  <p>Connecting you to the internet...</p>
+  <form id="auth" method="POST" action="${cp_action}">
+    <input type="hidden" name="redirurl" value="http://124.43.216.136:45080/portal/success">
+    <input type="hidden" name="zone" value="main_zone">
+  </form>
+  <script>
+    setTimeout(function(){ document.getElementById('auth').submit(); }, 1500);
+  </script>
+</body>
+</html>`);
+        }
+
+        // Default JSON response for non‑captive scenarios (e.g., testing from laptop)
         return res.status(200).json({ 
             success: true, 
             message: "Wi-Fi Access Granted",
@@ -201,11 +227,26 @@ app.post('/verify-otp', async (req: Request, res: Response): Promise<any> => {
 });
 
 // ---------------------------------------------------------
-// Landing page ?" redirects phone to the active event portal
+// Portal success page after pfSense redirects back
+// ---------------------------------------------------------
+app.get('/portal/success', (req: Request, res: Response) => {
+    res.send(`<!DOCTYPE html>
+<html>
+<head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:sans-serif;text-align:center;padding:60px 20px;background:#f4f7f6}h2{color:#005c42}p{color:#555}</style>
+</head>
+<body>
+<h2>🎉 You're connected!</h2>
+<p>You now have full internet access.<br>Enjoy the event!</p>
+</body>
+</html>`);
+});
+
+// ---------------------------------------------------------
+// Landing page redirects phone to the active event portal
 // ---------------------------------------------------------
 app.get('/landing', async (req: Request, res: Response): Promise<any> => {
     try {
-        // Find the most recently created active event
         const activeEvent = await EventModel.findOne(
             { status: 'active' },
             {},
@@ -213,34 +254,30 @@ app.get('/landing', async (req: Request, res: Response): Promise<any> => {
         );
 
         if (!activeEvent) {
-            // No active event ?" show a friendly message
             return res.send(`
                 <!DOCTYPE html>
                 <html>
                 <head>
                     <meta name="viewport" content="width=device-width, initial-scale=1">
                     <style>
-                        body { font-family: sans-serif; text-align: center; 
-                               padding: 60px 20px; background: #f4f7f6; }
+                        body { font-family: sans-serif; text-align: center; padding: 60px 20px; background: #f4f7f6; }
                         h2 { color: #005c42; }
                         p { color: #666; }
                     </style>
                 </head>
                 <body>
                     <h2>No Active Event</h2>
-                    <p>There is no active Wi-Fi event at this time.<br>
-                    Please contact the event organizer.</p>
+                    <p>There is no active Wi-Fi event at this time.<br>Please contact the event organizer.</p>
                 </body>
                 </html>
             `);
         }
 
-        // Forward query params (like MAC address) to the portal URL
-        const queryParams = new URLSearchParams(req.query as any).toString();
-        const redirectUrl = `/portal/${activeEvent.eventId}${queryParams ? '?' + queryParams : ''}`;
+        const params = new URLSearchParams(req.query as any);
+        params.set('client_ip', getClientIp(req));
+        const redirectUrl = `/portal/${activeEvent.eventId}?${params.toString()}`;
         
         return res.redirect(redirectUrl);
-
     } catch (error) {
         console.error("Error in /landing:", error);
         return res.status(500).send("Server error. Please try again.");
