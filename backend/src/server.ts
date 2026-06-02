@@ -235,8 +235,11 @@ app.get('/landing', async (req: Request, res: Response): Promise<any> => {
             `);
         }
 
-        // Redirect to the correct event portal page
-        return res.redirect(`/portal/${activeEvent.eventId}`);
+        // Forward query params (like MAC address) to the portal URL
+        const queryParams = new URLSearchParams(req.query as any).toString();
+        const redirectUrl = \`/portal/\${activeEvent.eventId}\${queryParams ? '?' + queryParams : ''}\`;
+        
+        return res.redirect(redirectUrl);
 
     } catch (error) {
         console.error("Error in /landing:", error);
