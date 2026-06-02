@@ -237,20 +237,12 @@ const EventPortal = () => {
 
 
 
-const RootRedirect = () => {
-    useEffect(() => {
-        window.location.href = '/api/landing';
-    }, []);
-    return null;
-};
-
 export default function App() {
     return (
         <Router>
             <Routes>
                 <Route path="/portal/:eventId" element={<EventPortal />} />
-                <Route path="/admin" element={<AdminDashboard />} />
-                <Route path="/" element={<RootRedirect />} />
+                <Route path="/" element={<AdminDashboard />} />
             </Routes>
         </Router>
     );
