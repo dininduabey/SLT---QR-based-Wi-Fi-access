@@ -847,407 +847,805 @@
 
 
 
+// import 'dotenv/config';
+// import express, { Request, Response } from 'express';
+// import mongoose from 'mongoose';
+// import cors from 'cors';
+// import crypto from 'crypto';
+
+// // Import integration modules
+// import { authorizeMacOnPfSense, revokeMacOnPfSense } from './pfsense';
+// import { sendOtpViaSlt } from './smsGateway';
+
+// // Import Mongoose Models
+// import { EventModel, OtpModel, SessionModel, AuditLogModel } from './models';
+
+// // MongoDB Connection
+// const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://dpd:digital%40456@192.168.100.111:3401/slt_wifi_portal?authSource=admin';
+
+// mongoose.connect(MONGODB_URI)
+//     .then(() => console.log("MongoDB successfully connected!"))
+//     .catch(err => console.error("MongoDB connection failed:", err));
+
+// const app = express();
+// app.use(cors());
+// app.use(express.json());
+// app.set('trust proxy', true);
+
+// // ---------------------------------------------------------
+// // In-memory store: client IP → pfSense captive portal action URL
+// //
+// // When pfSense first redirects a phone to /landing it includes
+// // the cp_action URL (pfSense's local authorization endpoint).
+// // We store it here keyed by client IP so that even if the user
+// // dismisses the CNA mini-browser and arrives via QR scan
+// // (no cp_action in the URL), we can still look it up and
+// // authorize them through pfSense after OTP verification.
+// //
+// // Entries expire after 30 minutes (phones reconnect and get a
+// // fresh cp_action from pfSense if needed).
+// // ---------------------------------------------------------
+// interface CpEntry { action: string; storedAt: number; }
+// const cpActionStore = new Map<string, CpEntry>();
+
+// function storeCpAction(ip: string, action: string) {
+//     if (!action || action === '$PORTAL_ACTION$') return;
+//     cpActionStore.set(ip, { action, storedAt: Date.now() });
+//     console.log(`[CP-STORE] Saved cp_action for IP ${ip}`);
+//     // Clean up entries older than 30 min
+//     const cutoff = Date.now() - 30 * 60 * 1000;
+//     cpActionStore.forEach((v, k) => { if (v.storedAt < cutoff) cpActionStore.delete(k); });
+// }
+
+// function getCpAction(ip: string): string {
+//     const entry = cpActionStore.get(ip);
+//     if (!entry) return '';
+//     // Expire after 30 min
+//     if (Date.now() - entry.storedAt > 30 * 60 * 1000) {
+//         cpActionStore.delete(ip);
+//         return '';
+//     }
+//     return entry.action;
+// }
+
+// // ---------------------------------------------------------
+// // Helper: Extract client IP
+// // ---------------------------------------------------------
+// function getClientIp(req: Request): string {
+//     const forwarded = req.headers['x-forwarded-for'];
+//     if (typeof forwarded === 'string') return forwarded.split(',')[0].trim();
+//     return req.ip || req.socket.remoteAddress || 'unknown';
+// }
+
+// // ---------------------------------------------------------
+// // DB Seeder
+// // ---------------------------------------------------------
+// async function seedDemoEvent() {
+//     try {
+//         const existing = await EventModel.findOne({ eventId: 'demo123' });
+//         if (!existing) {
+//             await new EventModel({
+//                 eventId: 'demo123',
+//                 name: "SLT Mobitel Tech Expo",
+//                 status: "active",
+//                 branding: {
+//                     logoUrl: "https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png",
+//                     primaryColor: "#005c42",
+//                     backgroundColor: "#f4f7f6",
+//                     termsUrl: "#"
+//                 },
+//                 policies: { bandwidthMbps: 10, dataLimitMb: 500, sessionDurationMinutes: 120 }
+//             }).save();
+//             console.log("Seeded 'demo123' event.");
+//         }
+//     } catch (e) { console.error("Seed failed", e); }
+// }
+// mongoose.connection.once('open', seedDemoEvent);
+
+// // ---------------------------------------------------------
+// // GET /events/:eventId
+// // ---------------------------------------------------------
+// app.get('/events/:eventId', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const eventDoc = await EventModel.findOne({ eventId: req.params.eventId });
+//         if (!eventDoc) return res.status(404).json({ error: "Event not found" });
+//         return res.status(200).json(eventDoc);
+//     } catch (error) {
+//         return res.status(500).json({ error: "Internal server error" });
+//     }
+// });
+
+// // ---------------------------------------------------------
+// // GET /landing
+// //
+// // pfSense captive portal redirects phones here first.
+// // KEY STEP: we store the cp_action URL (pfSense's auth endpoint)
+// // by client IP so we can use it later even if the user
+// // arrived via QR scan without cp_action in the URL.
+// // ---------------------------------------------------------
+// app.get('/landing', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const cp_action  = (req.query.cp_action  as string) || '';
+//         const client_ip  = (req.query.client_ip  as string) || '';
+//         const realIp     = getClientIp(req);
+
+//         // Store cp_action by whichever IP we have
+//         const ipToStore = client_ip || realIp;
+//         storeCpAction(ipToStore, cp_action);
+//         // Also store by the request IP in case they differ
+//         if (realIp && realIp !== ipToStore) storeCpAction(realIp, cp_action);
+
+//         const activeEvent = await EventModel.findOne(
+//             { status: 'active' },
+//             {},
+//             { sort: { createdAt: -1 } }
+//         );
+
+//         if (!activeEvent) {
+//             return res.send(`<!DOCTYPE html><html>
+// <head><meta name="viewport" content="width=device-width,initial-scale=1">
+// <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
+// display:flex;align-items:center;justify-content:center;min-height:100vh}
+// .card{background:white;border-radius:20px;padding:40px 28px;text-align:center;max-width:340px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.1)}
+// h2{color:#005c42}p{color:#666;font-size:14px}</style></head>
+// <body><div class="card"><h2>No Active Event</h2>
+// <p>There is no active Wi-Fi event right now.<br>Please contact the event organizer.</p>
+// </div></body></html>`);
+//         }
+
+//         // Forward cp_action so the event portal page also has it
+//         // (in case the user arrives via the portal button without dismissing)
+//         const params = new URLSearchParams();
+//         if (cp_action && cp_action !== '$PORTAL_ACTION$') params.set('cp_action', cp_action);
+//         if (client_ip) params.set('client_ip', client_ip);
+//         const qs = params.toString();
+
+//         return res.redirect(`/portal/${activeEvent.eventId}${qs ? '?' + qs : ''}`);
+//     } catch (error) {
+//         console.error("Error in /landing:", error);
+//         return res.status(500).send("Server error. Please try again.");
+//     }
+// });
+
+// // ---------------------------------------------------------
+// // GET /portal/success  — pfSense redirects here after auth
+// // ---------------------------------------------------------
+// app.get('/portal/success', (_req: Request, res: Response) => {
+//     res.send(`<!DOCTYPE html><html>
+// <head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connected!</title>
+// <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
+// display:flex;align-items:center;justify-content:center;min-height:100vh}
+// .card{background:white;border-radius:20px;padding:48px 28px;text-align:center;
+// max-width:340px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.1)}
+// .icon{font-size:64px;margin-bottom:16px}
+// h2{color:#005c42;font-size:24px;margin:0 0 10px}
+// p{color:#666;font-size:14px;margin:0 0 24px}
+// a{display:inline-block;background:#005c42;color:white;padding:14px 32px;
+// border-radius:12px;text-decoration:none;font-weight:700;font-size:15px}</style></head>
+// <body><div class="card">
+// <div class="icon">🎉</div>
+// <h2>You're Connected!</h2>
+// <p>Wi-Fi access granted.<br>Enjoy the event!</p>
+// <a href="https://www.google.com">Start Browsing</a>
+// </div></body></html>`);
+// });
+
+// // ---------------------------------------------------------
+// // POST /request-otp
+// // ---------------------------------------------------------
+// app.post('/request-otp', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const { mobile, eventId } = req.body;
+//         if (!mobile || !eventId) return res.status(400).json({ error: "Missing mobile or eventId" });
+
+//         const eventDoc = await EventModel.findOne({ eventId });
+//         if (!eventDoc) return res.status(404).json({ error: "Event not found" });
+//         if (eventDoc.status !== 'active') return res.status(403).json({ error: "Event is not active" });
+
+//         const otp = crypto.randomInt(100000, 999999).toString();
+//         const expiresAt = new Date(Date.now() + 5 * 60000);
+
+//         await OtpModel.findOneAndUpdate(
+//             { mobile, eventId },
+//             { otp, expiresAt, attempts: 0 },
+//             { upsert: true, new: true }
+//         );
+
+//         await sendOtpViaSlt(mobile, otp, eventDoc.name);
+
+//         return res.status(200).json({ success: true, message: "OTP sent successfully" });
+//     } catch (error: any) {
+//         console.error("Error in /request-otp:", error);
+//         return res.status(500).json({ error: error.message || "Internal server error" });
+//     }
+// });
+
+// // ---------------------------------------------------------
+// // POST /verify-otp
+// //
+// // Authorization priority:
+// //  1. cp_action from request body  (user came via portal button)
+// //  2. cp_action from IP store      (user dismissed CNA, scanned QR)
+// //  3. SSH fallback / mock mode     (direct browser access / testing)
+// // ---------------------------------------------------------
+// app.post('/verify-otp', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const { mobile, otp, eventId, macAddress, cp_action } = req.body;
+
+//         if (!mobile || !otp || !eventId) {
+//             return res.status(400).json({ error: "Missing required fields" });
+//         }
+
+//         const clientIp = getClientIp(req);
+//         const mac = macAddress || 'unknown';
+
+//         // 1. Verify OTP
+//         const otpDoc = await OtpModel.findOne({ mobile, eventId });
+//         if (!otpDoc) return res.status(401).json({ error: "Invalid or expired OTP" });
+
+//         if (otp !== '123456' && otpDoc.otp !== otp) {
+//             otpDoc.attempts += 1;
+//             await otpDoc.save();
+//             return res.status(401).json({ error: "Invalid OTP" });
+//         }
+//         if (otpDoc.expiresAt < new Date()) {
+//             return res.status(401).json({ error: "OTP expired" });
+//         }
+
+//         // 2. Fetch event
+//         const eventDoc = await EventModel.findOne({ eventId });
+//         if (!eventDoc) return res.status(404).json({ error: "Event not found" });
+//         if (eventDoc.status !== 'active') return res.status(403).json({ error: "Event is not active" });
+
+//         const policies = eventDoc.policies;
+
+//         // 3. Create session
+//         const sessionExpiresAt = policies?.sessionDurationMinutes
+//             ? new Date(Date.now() + policies.sessionDurationMinutes * 60000)
+//             : null;
+
+//         const sessionRef = await new SessionModel({
+//             eventId, mobile, macAddress: mac, clientIp,
+//             expiresAt: sessionExpiresAt, status: 'active', dataUsageMb: 0
+//         }).save();
+
+//         // 4. Clean up OTP
+//         await OtpModel.deleteOne({ _id: otpDoc._id });
+
+//         // 5. Audit log
+//         await new AuditLogModel({ action: 'session_created', eventId, mobile, macAddress: mac, clientIp }).save();
+
+//         // ---------------------------------------------------
+//         // Determine the best cp_action to use
+//         // Priority: request body → IP store → fallback SSH
+//         // ---------------------------------------------------
+//         const bodyAction   = (cp_action && cp_action !== 'undefined' && cp_action !== '$PORTAL_ACTION$')
+//                              ? cp_action.trim() : '';
+//         const storedAction = getCpAction(clientIp);
+//         const effectiveAction = bodyAction || storedAction;
+
+//         console.log(`[VERIFY-OTP] clientIp=${clientIp} bodyAction=${bodyAction ? 'yes' : 'no'} storedAction=${storedAction ? 'yes' : 'no'}`);
+
+//         if (effectiveAction) {
+//             // -----------------------------------------------
+//             // PATH A: Browser-based pfSense authorization
+//             // The phone POSTs directly to pfSense's local
+//             // captive portal endpoint. No SSH needed.
+//             // pfSense then authorizes that client IP and
+//             // redirects to /portal/success.
+//             // -----------------------------------------------
+//             console.log(`[CP-AUTH] Authorizing via browser form for IP ${clientIp}`);
+
+//             // Clear from store — authorization used
+//             cpActionStore.delete(clientIp);
+
+//             return res.send(`<!DOCTYPE html><html>
+// <head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connecting...</title>
+// <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
+// display:flex;align-items:center;justify-content:center;min-height:100vh}
+// .card{background:white;border-radius:20px;padding:48px 28px;text-align:center;
+// max-width:340px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.1)}
+// .spinner{width:48px;height:48px;border:4px solid #e0e0e0;border-top-color:#005c42;
+// border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 20px}
+// @keyframes spin{to{transform:rotate(360deg)}}
+// h2{color:#005c42;font-size:20px;margin:0 0 8px}p{color:#888;font-size:13px}</style></head>
+// <body><div class="card">
+// <div class="spinner"></div>
+// <h2>Granting Wi-Fi Access...</h2>
+// <p>Please wait a moment.</p>
+// </div>
+// <form id="cp_auth" method="POST" action="${effectiveAction}">
+//   <input type="hidden" name="redirurl" value="http://124.43.216.136:45080/portal/success">
+//   <input type="hidden" name="zone" value="main_zone">
+//   <input type="hidden" name="accept" value="Continue">
+// </form>
+// <script>setTimeout(function(){ document.getElementById('cp_auth').submit(); }, 1500);</script>
+// </body></html>`);
+//         }
+
+//         // -----------------------------------------------
+//         // PATH B: No cp_action available — SSH / mock
+//         // -----------------------------------------------
+//         try {
+//             await authorizeMacOnPfSense(mac, clientIp, policies?.sessionDurationMinutes);
+//         } catch (sshError: any) {
+//             console.warn(`[SSH] Authorization failed (non-fatal): ${sshError.message}`);
+//         }
+
+//         return res.status(200).json({
+//             success: true,
+//             message: "Wi-Fi Access Granted",
+//             sessionId: sessionRef._id,
+//             expiresAt: sessionExpiresAt
+//         });
+
+//     } catch (error: any) {
+//         console.error("Error in /verify-otp:", error);
+//         return res.status(500).json({ error: error.message || "Internal server error" });
+//     }
+// });
+
+// // ---------------------------------------------------------
+// // Admin: Create Event
+// // ---------------------------------------------------------
+// app.post('/admin/events', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const { eventId, name, branding, policies } = req.body;
+//         if (!eventId || !name) return res.status(400).json({ error: "Missing eventId or name" });
+
+//         await EventModel.findOneAndUpdate(
+//             { eventId },
+//             { name, status: 'active',
+//               branding: branding || {
+//                   logoUrl: "https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png",
+//                   primaryColor: "#005c42", backgroundColor: "#f4f7f6", termsUrl: "#"
+//               },
+//               policies },
+//             { upsert: true, new: true }
+//         );
+
+//         return res.status(201).json({ success: true, message: "Event created successfully" });
+//     } catch (error) {
+//         return res.status(500).json({ error: "Internal server error" });
+//     }
+// });
+
+// // ---------------------------------------------------------
+// // Admin: Adjourn Event
+// // ---------------------------------------------------------
+// app.post('/admin/events/:eventId/adjourn', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const eventId = req.params.eventId;
+//         await EventModel.findOneAndUpdate({ eventId }, { status: 'adjourned' });
+//         const sessions = await SessionModel.find({ eventId, status: 'active' });
+//         await Promise.all(sessions.map(s => revokeMacOnPfSense(s.macAddress)));
+//         await SessionModel.updateMany({ eventId, status: 'active' }, { status: 'terminated_early' });
+//         await new AuditLogModel({ action: 'event_adjourned', eventId, sessionsTerminated: sessions.length }).save();
+//         return res.status(200).json({ success: true, message: `Event adjourned. ${sessions.length} sessions terminated.` });
+//     } catch (error) {
+//         return res.status(500).json({ error: "Internal server error" });
+//     }
+// });
+
+// // ---------------------------------------------------------
+// // Admin: Download Report (CSV)
+// // ---------------------------------------------------------
+// app.get('/admin/events/:eventId/report', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const sessions = await SessionModel.find({ eventId: req.params.eventId });
+//         const csvHeader = 'Mobile,MAC Address,Client IP,Start Time,Expiry Time,Status,Data Usage (MB)\n';
+//         const csvRows = sessions.map(s =>
+//             `${s.mobile},${s.macAddress},${s.clientIp || 'N/A'},${s.startTime?.toISOString() || 'N/A'},${s.expiresAt?.toISOString() || 'N/A'},${s.status},${s.dataUsageMb || 0}`
+//         ).join('\n');
+//         res.setHeader('Content-Type', 'text/csv');
+//         res.setHeader('Content-Disposition', `attachment; filename=report_${req.params.eventId}.csv`);
+//         return res.send(csvHeader + csvRows);
+//     } catch (error) {
+//         return res.status(500).json({ error: "Internal server error" });
+//     }
+// });
+
+// const PORT = process.env.PORT || 8080;
+// app.listen(PORT, () => {
+//     console.log(`SLT Wi-Fi Auth API running on port ${PORT}`);
+//     console.log(`pfSense Host: ${process.env.PFSENSE_HOST || '(mock mode)'}`);
+//     console.log(`SMS Gateway:  ${process.env.SLT_SMS_GATEWAY_URL || '(mock mode)'}`);
+// });
+
+
+
+
+
+
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import crypto from 'crypto';
 
-// Import integration modules
 import { authorizeMacOnPfSense, revokeMacOnPfSense } from './pfsense';
 import { sendOtpViaSlt } from './smsGateway';
-
-// Import Mongoose Models
 import { EventModel, OtpModel, SessionModel, AuditLogModel } from './models';
 
-// MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://dpd:digital%40456@192.168.100.111:3401/slt_wifi_portal?authSource=admin';
+const MONGODB_URI = process.env.MONGODB_URI ||
+    'mongodb://dpd:digital%40456@192.168.100.111:3401/slt_wifi_portal?authSource=admin';
 
 mongoose.connect(MONGODB_URI)
-    .then(() => console.log("MongoDB successfully connected!"))
-    .catch(err => console.error("MongoDB connection failed:", err));
+    .then(() => console.log('MongoDB connected!'))
+    .catch(err => console.error('MongoDB connection failed:', err));
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.set('trust proxy', true);
 
-// ---------------------------------------------------------
-// In-memory store: client IP → pfSense captive portal action URL
+// ------------------------------------------------------------------
+// cp_action store
 //
-// When pfSense first redirects a phone to /landing it includes
-// the cp_action URL (pfSense's local authorization endpoint).
-// We store it here keyed by client IP so that even if the user
-// dismisses the CNA mini-browser and arrives via QR scan
-// (no cp_action in the URL), we can still look it up and
-// authorize them through pfSense after OTP verification.
+// When pfSense serves portal.html, a 1×1 pixel beacon fires to
+// /cp-ping, storing the pfSense authorization URL (cp_action) here
+// keyed by the phone's IP address as seen by THIS server.
 //
-// Entries expire after 30 minutes (phones reconnect and get a
-// fresh cp_action from pfSense if needed).
-// ---------------------------------------------------------
+// Later, when /verify-otp is called from the same phone (through the
+// same NAT), getClientIp() returns the same IP, so we find the
+// stored cp_action even if the user dismissed CNA and used the QR.
+// ------------------------------------------------------------------
 interface CpEntry { action: string; storedAt: number; }
-const cpActionStore = new Map<string, CpEntry>();
+const cpStore = new Map<string, CpEntry>();
+const CP_TTL  = 30 * 60 * 1000; // 30 minutes
 
-function storeCpAction(ip: string, action: string) {
-    if (!action || action === '$PORTAL_ACTION$') return;
-    cpActionStore.set(ip, { action, storedAt: Date.now() });
-    console.log(`[CP-STORE] Saved cp_action for IP ${ip}`);
-    // Clean up entries older than 30 min
-    const cutoff = Date.now() - 30 * 60 * 1000;
-    cpActionStore.forEach((v, k) => { if (v.storedAt < cutoff) cpActionStore.delete(k); });
+function saveCp(ip: string, action: string) {
+    if (!action || action.includes('$')) return;   // un-substituted placeholder
+    cpStore.set(ip, { action, storedAt: Date.now() });
+    console.log(`[CP-STORE] saved for ${ip}`);
+    // purge stale entries
+    const cutoff = Date.now() - CP_TTL;
+    cpStore.forEach((v, k) => { if (v.storedAt < cutoff) cpStore.delete(k); });
 }
 
-function getCpAction(ip: string): string {
-    const entry = cpActionStore.get(ip);
-    if (!entry) return '';
-    // Expire after 30 min
-    if (Date.now() - entry.storedAt > 30 * 60 * 1000) {
-        cpActionStore.delete(ip);
-        return '';
-    }
-    return entry.action;
+function loadCp(ip: string): string {
+    const e = cpStore.get(ip);
+    if (!e) return '';
+    if (Date.now() - e.storedAt > CP_TTL) { cpStore.delete(ip); return ''; }
+    return e.action;
 }
 
-// ---------------------------------------------------------
-// Helper: Extract client IP
-// ---------------------------------------------------------
+// 1×1 transparent GIF returned by /cp-ping
+const PIXEL = Buffer.from(
+    'R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==', 'base64'
+);
+
+// ------------------------------------------------------------------
+// Helper
+// ------------------------------------------------------------------
 function getClientIp(req: Request): string {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string') return forwarded.split(',')[0].trim();
+    const fwd = req.headers['x-forwarded-for'];
+    if (typeof fwd === 'string') return fwd.split(',')[0].trim();
     return req.ip || req.socket.remoteAddress || 'unknown';
 }
 
-// ---------------------------------------------------------
-// DB Seeder
-// ---------------------------------------------------------
+// ------------------------------------------------------------------
+// Seeder
+// ------------------------------------------------------------------
 async function seedDemoEvent() {
     try {
-        const existing = await EventModel.findOne({ eventId: 'demo123' });
-        if (!existing) {
+        if (!await EventModel.findOne({ eventId: 'demo123' })) {
             await new EventModel({
-                eventId: 'demo123',
-                name: "SLT Mobitel Tech Expo",
-                status: "active",
+                eventId: 'demo123', name: 'SLT Mobitel Tech Expo', status: 'active',
                 branding: {
-                    logoUrl: "https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png",
-                    primaryColor: "#005c42",
-                    backgroundColor: "#f4f7f6",
-                    termsUrl: "#"
+                    logoUrl: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png',
+                    primaryColor: '#005c42', backgroundColor: '#f4f7f6', termsUrl: '#'
                 },
                 policies: { bandwidthMbps: 10, dataLimitMb: 500, sessionDurationMinutes: 120 }
             }).save();
             console.log("Seeded 'demo123' event.");
         }
-    } catch (e) { console.error("Seed failed", e); }
+    } catch (e) { console.error('Seed failed', e); }
 }
 mongoose.connection.once('open', seedDemoEvent);
 
-// ---------------------------------------------------------
-// GET /events/:eventId
-// ---------------------------------------------------------
-app.get('/events/:eventId', async (req: Request, res: Response): Promise<any> => {
-    try {
-        const eventDoc = await EventModel.findOne({ eventId: req.params.eventId });
-        if (!eventDoc) return res.status(404).json({ error: "Event not found" });
-        return res.status(200).json(eventDoc);
-    } catch (error) {
-        return res.status(500).json({ error: "Internal server error" });
-    }
+// ==================================================================
+// GET /cp-ping
+//
+// Called by a silent 1×1 pixel in portal.html the instant pfSense
+// serves the captive portal page.  Stores cp_action by the visible
+// request IP so /verify-otp can find it later (same NAT path).
+// Also stores by client_ip ($CLIENT_IP$ from pfSense) as a backup.
+// ==================================================================
+app.get('/cp-ping', (req: Request, res: Response) => {
+    const cp_action  = (req.query.cp_action  as string) || '';
+    const client_ip  = (req.query.client_ip  as string) || '';
+    const requestIp  = getClientIp(req);
+
+    saveCp(requestIp, cp_action);
+    if (client_ip) saveCp(client_ip, cp_action);
+
+    console.log(`[CP-PING] requestIp=${requestIp} clientIp=${client_ip} hasAction=${!!cp_action && !cp_action.includes('$')}`);
+
+    res.setHeader('Content-Type', 'image/gif');
+    res.setHeader('Cache-Control', 'no-cache, no-store');
+    res.send(PIXEL);
 });
 
-// ---------------------------------------------------------
+// ==================================================================
 // GET /landing
-//
-// pfSense captive portal redirects phones here first.
-// KEY STEP: we store the cp_action URL (pfSense's auth endpoint)
-// by client IP so we can use it later even if the user
-// arrived via QR scan without cp_action in the URL.
-// ---------------------------------------------------------
+// ==================================================================
 app.get('/landing', async (req: Request, res: Response): Promise<any> => {
     try {
-        const cp_action  = (req.query.cp_action  as string) || '';
-        const client_ip  = (req.query.client_ip  as string) || '';
-        const realIp     = getClientIp(req);
+        const cp_action = (req.query.cp_action as string) || '';
+        const client_ip = (req.query.client_ip as string) || '';
+        const requestIp = getClientIp(req);
 
-        // Store cp_action by whichever IP we have
-        const ipToStore = client_ip || realIp;
-        storeCpAction(ipToStore, cp_action);
-        // Also store by the request IP in case they differ
-        if (realIp && realIp !== ipToStore) storeCpAction(realIp, cp_action);
+        // Store from URL params as well (user clicked the button)
+        saveCp(requestIp, cp_action);
+        if (client_ip) saveCp(client_ip, cp_action);
 
         const activeEvent = await EventModel.findOne(
-            { status: 'active' },
-            {},
-            { sort: { createdAt: -1 } }
+            { status: 'active' }, {}, { sort: { createdAt: -1 } }
         );
 
         if (!activeEvent) {
-            return res.send(`<!DOCTYPE html><html>
-<head><meta name="viewport" content="width=device-width,initial-scale=1">
+            return res.send(`<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
 display:flex;align-items:center;justify-content:center;min-height:100vh}
-.card{background:white;border-radius:20px;padding:40px 28px;text-align:center;max-width:340px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.1)}
+.c{background:#fff;border-radius:20px;padding:40px 28px;text-align:center;
+max-width:340px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.1)}
 h2{color:#005c42}p{color:#666;font-size:14px}</style></head>
-<body><div class="card"><h2>No Active Event</h2>
-<p>There is no active Wi-Fi event right now.<br>Please contact the event organizer.</p>
+<body><div class="c"><h2>No Active Event</h2>
+<p>There is no active event right now.<br>Please contact the event organizer.</p>
 </div></body></html>`);
         }
 
-        // Forward cp_action so the event portal page also has it
-        // (in case the user arrives via the portal button without dismissing)
-        const params = new URLSearchParams();
-        if (cp_action && cp_action !== '$PORTAL_ACTION$') params.set('cp_action', cp_action);
-        if (client_ip) params.set('client_ip', client_ip);
-        const qs = params.toString();
+        // Pass cp_action and client_ip through so the frontend has them
+        const qs = new URLSearchParams();
+        if (cp_action && !cp_action.includes('$')) qs.set('cp_action', cp_action);
+        if (client_ip) qs.set('client_ip', client_ip);
+        const q = qs.toString();
 
-        return res.redirect(`/portal/${activeEvent.eventId}${qs ? '?' + qs : ''}`);
-    } catch (error) {
-        console.error("Error in /landing:", error);
-        return res.status(500).send("Server error. Please try again.");
+        return res.redirect(`/portal/${activeEvent.eventId}${q ? '?' + q : ''}`);
+    } catch (err) {
+        console.error('/landing error', err);
+        return res.status(500).send('Server error. Please try again.');
     }
 });
 
-// ---------------------------------------------------------
-// GET /portal/success  — pfSense redirects here after auth
-// ---------------------------------------------------------
+// ==================================================================
+// GET /portal/success   — pfSense redirects here after auth
+// ==================================================================
 app.get('/portal/success', (_req: Request, res: Response) => {
-    res.send(`<!DOCTYPE html><html>
-<head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connected!</title>
+    res.send(`<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Connected!</title>
 <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
 display:flex;align-items:center;justify-content:center;min-height:100vh}
-.card{background:white;border-radius:20px;padding:48px 28px;text-align:center;
+.c{background:#fff;border-radius:20px;padding:48px 28px;text-align:center;
 max-width:340px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.1)}
-.icon{font-size:64px;margin-bottom:16px}
+.ic{font-size:64px;margin-bottom:16px}
 h2{color:#005c42;font-size:24px;margin:0 0 10px}
 p{color:#666;font-size:14px;margin:0 0 24px}
-a{display:inline-block;background:#005c42;color:white;padding:14px 32px;
-border-radius:12px;text-decoration:none;font-weight:700;font-size:15px}</style></head>
-<body><div class="card">
-<div class="icon">🎉</div>
+a{display:inline-block;background:#005c42;color:#fff;padding:14px 32px;
+border-radius:12px;text-decoration:none;font-weight:700}</style></head>
+<body><div class="c">
+<div class="ic">🎉</div>
 <h2>You're Connected!</h2>
 <p>Wi-Fi access granted.<br>Enjoy the event!</p>
 <a href="https://www.google.com">Start Browsing</a>
 </div></body></html>`);
 });
 
-// ---------------------------------------------------------
+// ==================================================================
 // POST /request-otp
-// ---------------------------------------------------------
+// ==================================================================
 app.post('/request-otp', async (req: Request, res: Response): Promise<any> => {
     try {
         const { mobile, eventId } = req.body;
-        if (!mobile || !eventId) return res.status(400).json({ error: "Missing mobile or eventId" });
+        if (!mobile || !eventId) return res.status(400).json({ error: 'Missing mobile or eventId' });
 
-        const eventDoc = await EventModel.findOne({ eventId });
-        if (!eventDoc) return res.status(404).json({ error: "Event not found" });
-        if (eventDoc.status !== 'active') return res.status(403).json({ error: "Event is not active" });
+        const ev = await EventModel.findOne({ eventId });
+        if (!ev)                    return res.status(404).json({ error: 'Event not found' });
+        if (ev.status !== 'active') return res.status(403).json({ error: 'Event is not active' });
 
-        const otp = crypto.randomInt(100000, 999999).toString();
-        const expiresAt = new Date(Date.now() + 5 * 60000);
+        const otp       = crypto.randomInt(100000, 999999).toString();
+        const expiresAt = new Date(Date.now() + 5 * 60_000);
 
         await OtpModel.findOneAndUpdate(
             { mobile, eventId },
             { otp, expiresAt, attempts: 0 },
             { upsert: true, new: true }
         );
+        await sendOtpViaSlt(mobile, otp, ev.name);
 
-        await sendOtpViaSlt(mobile, otp, eventDoc.name);
-
-        return res.status(200).json({ success: true, message: "OTP sent successfully" });
-    } catch (error: any) {
-        console.error("Error in /request-otp:", error);
-        return res.status(500).json({ error: error.message || "Internal server error" });
+        return res.status(200).json({ success: true, message: 'OTP sent successfully' });
+    } catch (err: any) {
+        console.error('/request-otp error', err);
+        return res.status(500).json({ error: err.message || 'Internal server error' });
     }
 });
 
-// ---------------------------------------------------------
+// ==================================================================
 // POST /verify-otp
 //
 // Authorization priority:
-//  1. cp_action from request body  (user came via portal button)
-//  2. cp_action from IP store      (user dismissed CNA, scanned QR)
-//  3. SSH fallback / mock mode     (direct browser access / testing)
-// ---------------------------------------------------------
+//   1. cp_action from request body  (user came via portal button)
+//   2. cp_action from cpStore by request IP  (beacon stored it)
+//   3. cp_action from cpStore by client_ip   (backup key)
+//   4. SSH / mock fallback
+// ==================================================================
 app.post('/verify-otp', async (req: Request, res: Response): Promise<any> => {
     try {
-        const { mobile, otp, eventId, macAddress, cp_action } = req.body;
+        const { mobile, otp, eventId, macAddress, cp_action, client_ip } = req.body;
+        if (!mobile || !otp || !eventId)
+            return res.status(400).json({ error: 'Missing required fields' });
 
-        if (!mobile || !otp || !eventId) {
-            return res.status(400).json({ error: "Missing required fields" });
-        }
+        const requestIp = getClientIp(req);
+        const mac       = macAddress || 'unknown';
 
-        const clientIp = getClientIp(req);
-        const mac = macAddress || 'unknown';
-
-        // 1. Verify OTP
+        // --- verify OTP ---
         const otpDoc = await OtpModel.findOne({ mobile, eventId });
-        if (!otpDoc) return res.status(401).json({ error: "Invalid or expired OTP" });
+        if (!otpDoc) return res.status(401).json({ error: 'Invalid or expired OTP' });
 
         if (otp !== '123456' && otpDoc.otp !== otp) {
-            otpDoc.attempts += 1;
-            await otpDoc.save();
-            return res.status(401).json({ error: "Invalid OTP" });
+            otpDoc.attempts += 1; await otpDoc.save();
+            return res.status(401).json({ error: 'Invalid OTP' });
         }
-        if (otpDoc.expiresAt < new Date()) {
-            return res.status(401).json({ error: "OTP expired" });
-        }
+        if (otpDoc.expiresAt < new Date())
+            return res.status(401).json({ error: 'OTP expired' });
 
-        // 2. Fetch event
-        const eventDoc = await EventModel.findOne({ eventId });
-        if (!eventDoc) return res.status(404).json({ error: "Event not found" });
-        if (eventDoc.status !== 'active') return res.status(403).json({ error: "Event is not active" });
+        // --- fetch event ---
+        const ev = await EventModel.findOne({ eventId });
+        if (!ev)                    return res.status(404).json({ error: 'Event not found' });
+        if (ev.status !== 'active') return res.status(403).json({ error: 'Event is not active' });
 
-        const policies = eventDoc.policies;
-
-        // 3. Create session
-        const sessionExpiresAt = policies?.sessionDurationMinutes
-            ? new Date(Date.now() + policies.sessionDurationMinutes * 60000)
-            : null;
+        // --- create session ---
+        const sessionExpiresAt = ev.policies?.sessionDurationMinutes
+            ? new Date(Date.now() + ev.policies.sessionDurationMinutes * 60_000) : null;
 
         const sessionRef = await new SessionModel({
-            eventId, mobile, macAddress: mac, clientIp,
+            eventId, mobile, macAddress: mac, clientIp: requestIp,
             expiresAt: sessionExpiresAt, status: 'active', dataUsageMb: 0
         }).save();
 
-        // 4. Clean up OTP
         await OtpModel.deleteOne({ _id: otpDoc._id });
+        await new AuditLogModel({ action: 'session_created', eventId, mobile, macAddress: mac, clientIp: requestIp }).save();
 
-        // 5. Audit log
-        await new AuditLogModel({ action: 'session_created', eventId, mobile, macAddress: mac, clientIp }).save();
+        // --- resolve cp_action ---
+        const clean = (s: string) => s && !s.includes('$') ? s.trim() : '';
+        const effective =
+            clean(cp_action)         ||   // from body (portal button path)
+            loadCp(requestIp)        ||   // beacon stored by server-visible IP  ← KEY FIX
+            (client_ip ? loadCp(client_ip) : '');  // backup: pfSense $CLIENT_IP$
 
-        // ---------------------------------------------------
-        // Determine the best cp_action to use
-        // Priority: request body → IP store → fallback SSH
-        // ---------------------------------------------------
-        const bodyAction   = (cp_action && cp_action !== 'undefined' && cp_action !== '$PORTAL_ACTION$')
-                             ? cp_action.trim() : '';
-        const storedAction = getCpAction(clientIp);
-        const effectiveAction = bodyAction || storedAction;
+        console.log(`[VERIFY-OTP] ip=${requestIp} bodyAction=${!!clean(cp_action)} storedByIp=${!!loadCp(requestIp)} effective=${!!effective}`);
 
-        console.log(`[VERIFY-OTP] clientIp=${clientIp} bodyAction=${bodyAction ? 'yes' : 'no'} storedAction=${storedAction ? 'yes' : 'no'}`);
+        if (effective) {
+            // Browser-based pfSense auth — no SSH needed
+            cpStore.delete(requestIp);
+            if (client_ip) cpStore.delete(client_ip);
+            console.log(`[CP-AUTH] authorizing via browser form — action: ${effective}`);
 
-        if (effectiveAction) {
-            // -----------------------------------------------
-            // PATH A: Browser-based pfSense authorization
-            // The phone POSTs directly to pfSense's local
-            // captive portal endpoint. No SSH needed.
-            // pfSense then authorizes that client IP and
-            // redirects to /portal/success.
-            // -----------------------------------------------
-            console.log(`[CP-AUTH] Authorizing via browser form for IP ${clientIp}`);
-
-            // Clear from store — authorization used
-            cpActionStore.delete(clientIp);
-
-            return res.send(`<!DOCTYPE html><html>
-<head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connecting...</title>
+            return res.send(`<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Connecting...</title>
 <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
 display:flex;align-items:center;justify-content:center;min-height:100vh}
-.card{background:white;border-radius:20px;padding:48px 28px;text-align:center;
+.c{background:#fff;border-radius:20px;padding:48px 28px;text-align:center;
 max-width:340px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.1)}
-.spinner{width:48px;height:48px;border:4px solid #e0e0e0;border-top-color:#005c42;
-border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 20px}
+.sp{width:48px;height:48px;border:4px solid #e0e0e0;border-top-color:#005c42;
+border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px}
 @keyframes spin{to{transform:rotate(360deg)}}
 h2{color:#005c42;font-size:20px;margin:0 0 8px}p{color:#888;font-size:13px}</style></head>
-<body><div class="card">
-<div class="spinner"></div>
+<body><div class="c">
+<div class="sp"></div>
 <h2>Granting Wi-Fi Access...</h2>
 <p>Please wait a moment.</p>
 </div>
-<form id="cp_auth" method="POST" action="${effectiveAction}">
+<form id="f" method="POST" action="${effective}">
   <input type="hidden" name="redirurl" value="http://124.43.216.136:45080/portal/success">
-  <input type="hidden" name="zone" value="main_zone">
-  <input type="hidden" name="accept" value="Continue">
+  <input type="hidden" name="zone"     value="main_zone">
+  <input type="hidden" name="accept"   value="Continue">
 </form>
-<script>setTimeout(function(){ document.getElementById('cp_auth').submit(); }, 1500);</script>
+<script>setTimeout(function(){document.getElementById('f').submit();},1500);</script>
 </body></html>`);
         }
 
-        // -----------------------------------------------
-        // PATH B: No cp_action available — SSH / mock
-        // -----------------------------------------------
+        // SSH / mock fallback
         try {
-            await authorizeMacOnPfSense(mac, clientIp, policies?.sessionDurationMinutes);
-        } catch (sshError: any) {
-            console.warn(`[SSH] Authorization failed (non-fatal): ${sshError.message}`);
+            await authorizeMacOnPfSense(mac, requestIp, ev.policies?.sessionDurationMinutes);
+        } catch (e: any) {
+            console.warn('[SSH] non-fatal:', e.message);
         }
 
         return res.status(200).json({
-            success: true,
-            message: "Wi-Fi Access Granted",
-            sessionId: sessionRef._id,
-            expiresAt: sessionExpiresAt
+            success: true, message: 'Wi-Fi Access Granted',
+            sessionId: sessionRef._id, expiresAt: sessionExpiresAt
         });
 
-    } catch (error: any) {
-        console.error("Error in /verify-otp:", error);
-        return res.status(500).json({ error: error.message || "Internal server error" });
+    } catch (err: any) {
+        console.error('/verify-otp error', err);
+        return res.status(500).json({ error: err.message || 'Internal server error' });
     }
 });
 
-// ---------------------------------------------------------
+// ==================================================================
 // Admin: Create Event
-// ---------------------------------------------------------
+// ==================================================================
 app.post('/admin/events', async (req: Request, res: Response): Promise<any> => {
     try {
         const { eventId, name, branding, policies } = req.body;
-        if (!eventId || !name) return res.status(400).json({ error: "Missing eventId or name" });
-
+        if (!eventId || !name) return res.status(400).json({ error: 'Missing eventId or name' });
         await EventModel.findOneAndUpdate(
             { eventId },
             { name, status: 'active',
-              branding: branding || {
-                  logoUrl: "https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png",
-                  primaryColor: "#005c42", backgroundColor: "#f4f7f6", termsUrl: "#"
-              },
+              branding: branding || { logoUrl: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png',
+                  primaryColor: '#005c42', backgroundColor: '#f4f7f6', termsUrl: '#' },
               policies },
             { upsert: true, new: true }
         );
-
-        return res.status(201).json({ success: true, message: "Event created successfully" });
-    } catch (error) {
-        return res.status(500).json({ error: "Internal server error" });
-    }
+        return res.status(201).json({ success: true, message: 'Event created successfully' });
+    } catch { return res.status(500).json({ error: 'Internal server error' }); }
 });
 
-// ---------------------------------------------------------
+// ==================================================================
+// Admin: Get Event Details
+// ==================================================================
+app.get('/events/:eventId', async (req: Request, res: Response): Promise<any> => {
+    try {
+        const ev = await EventModel.findOne({ eventId: req.params.eventId });
+        if (!ev) return res.status(404).json({ error: 'Event not found' });
+        return res.status(200).json(ev);
+    } catch { return res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// ==================================================================
 // Admin: Adjourn Event
-// ---------------------------------------------------------
+// ==================================================================
 app.post('/admin/events/:eventId/adjourn', async (req: Request, res: Response): Promise<any> => {
     try {
-        const eventId = req.params.eventId;
+        const { eventId } = req.params;
         await EventModel.findOneAndUpdate({ eventId }, { status: 'adjourned' });
         const sessions = await SessionModel.find({ eventId, status: 'active' });
         await Promise.all(sessions.map(s => revokeMacOnPfSense(s.macAddress)));
         await SessionModel.updateMany({ eventId, status: 'active' }, { status: 'terminated_early' });
         await new AuditLogModel({ action: 'event_adjourned', eventId, sessionsTerminated: sessions.length }).save();
-        return res.status(200).json({ success: true, message: `Event adjourned. ${sessions.length} sessions terminated.` });
-    } catch (error) {
-        return res.status(500).json({ error: "Internal server error" });
-    }
+        return res.status(200).json({ success: true, message: `Adjourned. ${sessions.length} sessions terminated.` });
+    } catch { return res.status(500).json({ error: 'Internal server error' }); }
 });
 
-// ---------------------------------------------------------
-// Admin: Download Report (CSV)
-// ---------------------------------------------------------
+// ==================================================================
+// Admin: Download CSV Report
+// ==================================================================
 app.get('/admin/events/:eventId/report', async (req: Request, res: Response): Promise<any> => {
     try {
         const sessions = await SessionModel.find({ eventId: req.params.eventId });
-        const csvHeader = 'Mobile,MAC Address,Client IP,Start Time,Expiry Time,Status,Data Usage (MB)\n';
-        const csvRows = sessions.map(s =>
-            `${s.mobile},${s.macAddress},${s.clientIp || 'N/A'},${s.startTime?.toISOString() || 'N/A'},${s.expiresAt?.toISOString() || 'N/A'},${s.status},${s.dataUsageMb || 0}`
+        const header   = 'Mobile,MAC Address,Client IP,Start Time,Expiry Time,Status,Data Usage (MB)\n';
+        const rows     = sessions.map(s =>
+            `${s.mobile},${s.macAddress},${s.clientIp||'N/A'},${s.startTime?.toISOString()||'N/A'},${s.expiresAt?.toISOString()||'N/A'},${s.status},${s.dataUsageMb||0}`
         ).join('\n');
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename=report_${req.params.eventId}.csv`);
-        return res.send(csvHeader + csvRows);
-    } catch (error) {
-        return res.status(500).json({ error: "Internal server error" });
-    }
+        return res.send(header + rows);
+    } catch { return res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// ==================================================================
+// Debug endpoint — check what's in cpStore for an IP
+// Remove before production!
+// ==================================================================
+app.get('/debug/cp-store', (req: Request, res: Response) => {
+    const ip = (req.query.ip as string) || getClientIp(req);
+    const entry = cpStore.get(ip);
+    const allKeys = Array.from(cpStore.keys());
+    res.json({
+        queried_ip: ip,
+        request_ip: getClientIp(req),
+        found: !!entry,
+        action_preview: entry ? entry.action.substring(0, 80) + '...' : null,
+        all_stored_ips: allKeys
+    });
 });
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-    console.log(`SLT Wi-Fi Auth API running on port ${PORT}`);
-    console.log(`pfSense Host: ${process.env.PFSENSE_HOST || '(mock mode)'}`);
-    console.log(`SMS Gateway:  ${process.env.SLT_SMS_GATEWAY_URL || '(mock mode)'}`);
+    console.log(`SLT Wi-Fi Auth API on port ${PORT}`);
+    console.log(`pfSense: ${process.env.PFSENSE_HOST || '(mock)'}`);
+    console.log(`SMS:     ${process.env.SLT_SMS_GATEWAY_URL || '(mock)'}`);
 });
