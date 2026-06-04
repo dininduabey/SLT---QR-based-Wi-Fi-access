@@ -1257,6 +1257,400 @@
 
 
 
+// import 'dotenv/config';
+// import express, { Request, Response } from 'express';
+// import mongoose from 'mongoose';
+// import cors from 'cors';
+// import crypto from 'crypto';
+
+// import { authorizeMacOnPfSense, revokeMacOnPfSense } from './pfsense';
+// import { sendOtpViaSlt } from './smsGateway';
+// import { EventModel, OtpModel, SessionModel, AuditLogModel } from './models';
+
+// const MONGODB_URI = process.env.MONGODB_URI ||
+//     'mongodb://dpd:digital%40456@192.168.100.111:3401/slt_wifi_portal?authSource=admin';
+
+// mongoose.connect(MONGODB_URI)
+//     .then(() => console.log('MongoDB connected!'))
+//     .catch(err => console.error('MongoDB connection failed:', err));
+
+// const app = express();
+// app.use(cors());
+// app.use(express.json());
+// app.set('trust proxy', true);
+
+// // ------------------------------------------------------------------
+// // cp_action store
+// //
+// // When pfSense serves portal.html, a 1×1 pixel beacon fires to
+// // /cp-ping, storing the pfSense authorization URL (cp_action) here
+// // keyed by the phone's IP address as seen by THIS server.
+// //
+// // Later, when /verify-otp is called from the same phone (through the
+// // same NAT), getClientIp() returns the same IP, so we find the
+// // stored cp_action even if the user dismissed CNA and used the QR.
+// // ------------------------------------------------------------------
+// interface CpEntry { action: string; storedAt: number; }
+// const cpStore = new Map<string, CpEntry>();
+// const CP_TTL  = 30 * 60 * 1000; // 30 minutes
+
+// function saveCp(ip: string, action: string) {
+//     if (!action || action.includes('$')) return;   // un-substituted placeholder
+//     cpStore.set(ip, { action, storedAt: Date.now() });
+//     console.log(`[CP-STORE] saved for ${ip}`);
+//     // purge stale entries
+//     const cutoff = Date.now() - CP_TTL;
+//     cpStore.forEach((v, k) => { if (v.storedAt < cutoff) cpStore.delete(k); });
+// }
+
+// function loadCp(ip: string): string {
+//     const e = cpStore.get(ip);
+//     if (!e) return '';
+//     if (Date.now() - e.storedAt > CP_TTL) { cpStore.delete(ip); return ''; }
+//     return e.action;
+// }
+
+// // 1×1 transparent GIF returned by /cp-ping
+// const PIXEL = Buffer.from(
+//     'R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==', 'base64'
+// );
+
+// // ------------------------------------------------------------------
+// // Helper
+// // ------------------------------------------------------------------
+// function getClientIp(req: Request): string {
+//     const fwd = req.headers['x-forwarded-for'];
+//     if (typeof fwd === 'string') return fwd.split(',')[0].trim();
+//     return req.ip || req.socket.remoteAddress || 'unknown';
+// }
+
+// // ------------------------------------------------------------------
+// // Seeder
+// // ------------------------------------------------------------------
+// async function seedDemoEvent() {
+//     try {
+//         if (!await EventModel.findOne({ eventId: 'demo123' })) {
+//             await new EventModel({
+//                 eventId: 'demo123', name: 'SLT Mobitel Tech Expo', status: 'active',
+//                 branding: {
+//                     logoUrl: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png',
+//                     primaryColor: '#005c42', backgroundColor: '#f4f7f6', termsUrl: '#'
+//                 },
+//                 policies: { bandwidthMbps: 10, dataLimitMb: 500, sessionDurationMinutes: 120 }
+//             }).save();
+//             console.log("Seeded 'demo123' event.");
+//         }
+//     } catch (e) { console.error('Seed failed', e); }
+// }
+// mongoose.connection.once('open', seedDemoEvent);
+
+// // ==================================================================
+// // GET /cp-ping
+// //
+// // Called by a silent 1×1 pixel in portal.html the instant pfSense
+// // serves the captive portal page.  Stores cp_action by the visible
+// // request IP so /verify-otp can find it later (same NAT path).
+// // Also stores by client_ip ($CLIENT_IP$ from pfSense) as a backup.
+// // ==================================================================
+// app.get('/cp-ping', (req: Request, res: Response) => {
+//     const cp_action  = (req.query.cp_action  as string) || '';
+//     const client_ip  = (req.query.client_ip  as string) || '';
+//     const requestIp  = getClientIp(req);
+
+//     saveCp(requestIp, cp_action);
+//     if (client_ip) saveCp(client_ip, cp_action);
+
+//     console.log(`[CP-PING] requestIp=${requestIp} clientIp=${client_ip} hasAction=${!!cp_action && !cp_action.includes('$')}`);
+
+//     res.setHeader('Content-Type', 'image/gif');
+//     res.setHeader('Cache-Control', 'no-cache, no-store');
+//     res.send(PIXEL);
+// });
+
+// // ==================================================================
+// // GET /landing
+// // ==================================================================
+// app.get('/landing', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const cp_action = (req.query.cp_action as string) || '';
+//         const client_ip = (req.query.client_ip as string) || '';
+//         const requestIp = getClientIp(req);
+
+//         // Store from URL params as well (user clicked the button)
+//         saveCp(requestIp, cp_action);
+//         if (client_ip) saveCp(client_ip, cp_action);
+
+//         const activeEvent = await EventModel.findOne(
+//             { status: 'active' }, {}, { sort: { createdAt: -1 } }
+//         );
+
+//         if (!activeEvent) {
+//             return res.send(`<!DOCTYPE html><html><head>
+// <meta name="viewport" content="width=device-width,initial-scale=1">
+// <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
+// display:flex;align-items:center;justify-content:center;min-height:100vh}
+// .c{background:#fff;border-radius:20px;padding:40px 28px;text-align:center;
+// max-width:340px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.1)}
+// h2{color:#005c42}p{color:#666;font-size:14px}</style></head>
+// <body><div class="c"><h2>No Active Event</h2>
+// <p>There is no active event right now.<br>Please contact the event organizer.</p>
+// </div></body></html>`);
+//         }
+
+//         // Pass cp_action and client_ip through so the frontend has them
+//         const qs = new URLSearchParams();
+//         if (cp_action && !cp_action.includes('$')) qs.set('cp_action', cp_action);
+//         if (client_ip) qs.set('client_ip', client_ip);
+//         const q = qs.toString();
+
+//         return res.redirect(`/portal/${activeEvent.eventId}${q ? '?' + q : ''}`);
+//     } catch (err) {
+//         console.error('/landing error', err);
+//         return res.status(500).send('Server error. Please try again.');
+//     }
+// });
+
+// // ==================================================================
+// // GET /portal/success   — pfSense redirects here after auth
+// // ==================================================================
+// app.get('/portal/success', (_req: Request, res: Response) => {
+//     res.send(`<!DOCTYPE html><html><head>
+// <meta name="viewport" content="width=device-width,initial-scale=1"><title>Connected!</title>
+// <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
+// display:flex;align-items:center;justify-content:center;min-height:100vh}
+// .c{background:#fff;border-radius:20px;padding:48px 28px;text-align:center;
+// max-width:340px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.1)}
+// .ic{font-size:64px;margin-bottom:16px}
+// h2{color:#005c42;font-size:24px;margin:0 0 10px}
+// p{color:#666;font-size:14px;margin:0 0 24px}
+// a{display:inline-block;background:#005c42;color:#fff;padding:14px 32px;
+// border-radius:12px;text-decoration:none;font-weight:700}</style></head>
+// <body><div class="c">
+// <div class="ic">🎉</div>
+// <h2>You're Connected!</h2>
+// <p>Wi-Fi access granted.<br>Enjoy the event!</p>
+// <a href="https://www.google.com">Start Browsing</a>
+// </div></body></html>`);
+// });
+
+// // ==================================================================
+// // POST /request-otp
+// // ==================================================================
+// app.post('/request-otp', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const { mobile, eventId } = req.body;
+//         if (!mobile || !eventId) return res.status(400).json({ error: 'Missing mobile or eventId' });
+
+//         const ev = await EventModel.findOne({ eventId });
+//         if (!ev)                    return res.status(404).json({ error: 'Event not found' });
+//         if (ev.status !== 'active') return res.status(403).json({ error: 'Event is not active' });
+
+//         const otp       = crypto.randomInt(100000, 999999).toString();
+//         const expiresAt = new Date(Date.now() + 5 * 60_000);
+
+//         await OtpModel.findOneAndUpdate(
+//             { mobile, eventId },
+//             { otp, expiresAt, attempts: 0 },
+//             { upsert: true, new: true }
+//         );
+//         await sendOtpViaSlt(mobile, otp, ev.name);
+
+//         return res.status(200).json({ success: true, message: 'OTP sent successfully' });
+//     } catch (err: any) {
+//         console.error('/request-otp error', err);
+//         return res.status(500).json({ error: err.message || 'Internal server error' });
+//     }
+// });
+
+// // ==================================================================
+// // POST /verify-otp
+// //
+// // Authorization priority:
+// //   1. cp_action from request body  (user came via portal button)
+// //   2. cp_action from cpStore by request IP  (beacon stored it)
+// //   3. cp_action from cpStore by client_ip   (backup key)
+// //   4. SSH / mock fallback
+// // ==================================================================
+// app.post('/verify-otp', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const { mobile, otp, eventId, macAddress, cp_action, client_ip } = req.body;
+//         if (!mobile || !otp || !eventId)
+//             return res.status(400).json({ error: 'Missing required fields' });
+
+//         const requestIp = getClientIp(req);
+//         const mac       = macAddress || 'unknown';
+
+//         // --- verify OTP ---
+//         const otpDoc = await OtpModel.findOne({ mobile, eventId });
+//         if (!otpDoc) return res.status(401).json({ error: 'Invalid or expired OTP' });
+
+//         if (otp !== '123456' && otpDoc.otp !== otp) {
+//             otpDoc.attempts += 1; await otpDoc.save();
+//             return res.status(401).json({ error: 'Invalid OTP' });
+//         }
+//         if (otpDoc.expiresAt < new Date())
+//             return res.status(401).json({ error: 'OTP expired' });
+
+//         // --- fetch event ---
+//         const ev = await EventModel.findOne({ eventId });
+//         if (!ev)                    return res.status(404).json({ error: 'Event not found' });
+//         if (ev.status !== 'active') return res.status(403).json({ error: 'Event is not active' });
+
+//         // --- create session ---
+//         const sessionExpiresAt = ev.policies?.sessionDurationMinutes
+//             ? new Date(Date.now() + ev.policies.sessionDurationMinutes * 60_000) : null;
+
+//         const sessionRef = await new SessionModel({
+//             eventId, mobile, macAddress: mac, clientIp: requestIp,
+//             expiresAt: sessionExpiresAt, status: 'active', dataUsageMb: 0
+//         }).save();
+
+//         await OtpModel.deleteOne({ _id: otpDoc._id });
+//         await new AuditLogModel({ action: 'session_created', eventId, mobile, macAddress: mac, clientIp: requestIp }).save();
+
+//         // --- resolve cp_action ---
+//         const clean = (s: string) => s && !s.includes('$') ? s.trim() : '';
+//         const effective =
+//             clean(cp_action)         ||   // from body (portal button path)
+//             loadCp(requestIp)        ||   // beacon stored by server-visible IP  ← KEY FIX
+//             (client_ip ? loadCp(client_ip) : '');  // backup: pfSense $CLIENT_IP$
+
+//         console.log(`[VERIFY-OTP] ip=${requestIp} bodyAction=${!!clean(cp_action)} storedByIp=${!!loadCp(requestIp)} effective=${!!effective}`);
+
+//         if (effective) {
+//             // Browser-based pfSense auth — no SSH needed
+//             cpStore.delete(requestIp);
+//             if (client_ip) cpStore.delete(client_ip);
+//             console.log(`[CP-AUTH] authorizing via browser form — action: ${effective}`);
+
+//             return res.send(`<!DOCTYPE html><html><head>
+// <meta name="viewport" content="width=device-width,initial-scale=1"><title>Connecting...</title>
+// <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
+// display:flex;align-items:center;justify-content:center;min-height:100vh}
+// .c{background:#fff;border-radius:20px;padding:48px 28px;text-align:center;
+// max-width:340px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.1)}
+// .sp{width:48px;height:48px;border:4px solid #e0e0e0;border-top-color:#005c42;
+// border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px}
+// @keyframes spin{to{transform:rotate(360deg)}}
+// h2{color:#005c42;font-size:20px;margin:0 0 8px}p{color:#888;font-size:13px}</style></head>
+// <body><div class="c">
+// <div class="sp"></div>
+// <h2>Granting Wi-Fi Access...</h2>
+// <p>Please wait a moment.</p>
+// </div>
+// <form id="f" method="POST" action="${effective}">
+//   <input type="hidden" name="redirurl" value="http://124.43.216.136:45080/portal/success">
+//   <input type="hidden" name="zone"     value="main_zone">
+//   <input type="hidden" name="accept"   value="Continue">
+// </form>
+// <script>setTimeout(function(){document.getElementById('f').submit();},1500);</script>
+// </body></html>`);
+//         }
+
+//         // SSH / mock fallback
+//         try {
+//             await authorizeMacOnPfSense(mac, requestIp, ev.policies?.sessionDurationMinutes);
+//         } catch (e: any) {
+//             console.warn('[SSH] non-fatal:', e.message);
+//         }
+
+//         return res.status(200).json({
+//             success: true, message: 'Wi-Fi Access Granted',
+//             sessionId: sessionRef._id, expiresAt: sessionExpiresAt
+//         });
+
+//     } catch (err: any) {
+//         console.error('/verify-otp error', err);
+//         return res.status(500).json({ error: err.message || 'Internal server error' });
+//     }
+// });
+
+// // ==================================================================
+// // Admin: Create Event
+// // ==================================================================
+// app.post('/admin/events', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const { eventId, name, branding, policies } = req.body;
+//         if (!eventId || !name) return res.status(400).json({ error: 'Missing eventId or name' });
+//         await EventModel.findOneAndUpdate(
+//             { eventId },
+//             { name, status: 'active',
+//               branding: branding || { logoUrl: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png',
+//                   primaryColor: '#005c42', backgroundColor: '#f4f7f6', termsUrl: '#' },
+//               policies },
+//             { upsert: true, new: true }
+//         );
+//         return res.status(201).json({ success: true, message: 'Event created successfully' });
+//     } catch { return res.status(500).json({ error: 'Internal server error' }); }
+// });
+
+// // ==================================================================
+// // Admin: Get Event Details
+// // ==================================================================
+// app.get('/events/:eventId', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const ev = await EventModel.findOne({ eventId: req.params.eventId });
+//         if (!ev) return res.status(404).json({ error: 'Event not found' });
+//         return res.status(200).json(ev);
+//     } catch { return res.status(500).json({ error: 'Internal server error' }); }
+// });
+
+// // ==================================================================
+// // Admin: Adjourn Event
+// // ==================================================================
+// app.post('/admin/events/:eventId/adjourn', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const { eventId } = req.params;
+//         await EventModel.findOneAndUpdate({ eventId }, { status: 'adjourned' });
+//         const sessions = await SessionModel.find({ eventId, status: 'active' });
+//         await Promise.all(sessions.map(s => revokeMacOnPfSense(s.macAddress)));
+//         await SessionModel.updateMany({ eventId, status: 'active' }, { status: 'terminated_early' });
+//         await new AuditLogModel({ action: 'event_adjourned', eventId, sessionsTerminated: sessions.length }).save();
+//         return res.status(200).json({ success: true, message: `Adjourned. ${sessions.length} sessions terminated.` });
+//     } catch { return res.status(500).json({ error: 'Internal server error' }); }
+// });
+
+// // ==================================================================
+// // Admin: Download CSV Report
+// // ==================================================================
+// app.get('/admin/events/:eventId/report', async (req: Request, res: Response): Promise<any> => {
+//     try {
+//         const sessions = await SessionModel.find({ eventId: req.params.eventId });
+//         const header   = 'Mobile,MAC Address,Client IP,Start Time,Expiry Time,Status,Data Usage (MB)\n';
+//         const rows     = sessions.map(s =>
+//             `${s.mobile},${s.macAddress},${s.clientIp||'N/A'},${s.startTime?.toISOString()||'N/A'},${s.expiresAt?.toISOString()||'N/A'},${s.status},${s.dataUsageMb||0}`
+//         ).join('\n');
+//         res.setHeader('Content-Type', 'text/csv');
+//         res.setHeader('Content-Disposition', `attachment; filename=report_${req.params.eventId}.csv`);
+//         return res.send(header + rows);
+//     } catch { return res.status(500).json({ error: 'Internal server error' }); }
+// });
+
+// // ==================================================================
+// // Debug endpoint — check what's in cpStore for an IP
+// // Remove before production!
+// // ==================================================================
+// app.get('/debug/cp-store', (req: Request, res: Response) => {
+//     const ip = (req.query.ip as string) || getClientIp(req);
+//     const entry = cpStore.get(ip);
+//     const allKeys = Array.from(cpStore.keys());
+//     res.json({
+//         queried_ip: ip,
+//         request_ip: getClientIp(req),
+//         found: !!entry,
+//         action_preview: entry ? entry.action.substring(0, 80) + '...' : null,
+//         all_stored_ips: allKeys
+//     });
+// });
+
+// const PORT = process.env.PORT || 8080;
+// app.listen(PORT, () => {
+//     console.log(`SLT Wi-Fi Auth API on port ${PORT}`);
+//     console.log(`pfSense: ${process.env.PFSENSE_HOST || '(mock)'}`);
+//     console.log(`SMS:     ${process.env.SLT_SMS_GATEWAY_URL || '(mock)'}`);
+// });
+
+
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import mongoose from 'mongoose';
@@ -1510,20 +1904,32 @@ app.post('/verify-otp', async (req: Request, res: Response): Promise<any> => {
 
         // --- resolve cp_action ---
         const clean = (s: string) => s && !s.includes('$') ? s.trim() : '';
+
+        // pfSense captive portal HTTP server always listens on port 8000 on LAN.
+        // This hardcoded URL works even when $PORTAL_ACTION$ was never captured.
+        // With "None" auth, pfSense authorizes the posting client by source IP —
+        // no session token required.
+        const PFSENSE_CP_URL = 'http://172.31.98.1:8000/index.php';
+
         const effective =
-            clean(cp_action)         ||   // from body (portal button path)
-            loadCp(requestIp)        ||   // beacon stored by server-visible IP  ← KEY FIX
-            (client_ip ? loadCp(client_ip) : '');  // backup: pfSense $CLIENT_IP$
+            clean(cp_action)                       ||  // from body (portal button path)
+            loadCp(requestIp)                      ||  // beacon stored it by NAT IP
+            (client_ip ? loadCp(client_ip) : '')   ||  // backup: $CLIENT_IP$ from pfSense
+            PFSENSE_CP_URL;                            // hardcoded fallback — always present
 
-        console.log(`[VERIFY-OTP] ip=${requestIp} bodyAction=${!!clean(cp_action)} storedByIp=${!!loadCp(requestIp)} effective=${!!effective}`);
+        console.log(`[VERIFY-OTP] ip=${requestIp} source=` +
+            (clean(cp_action) ? 'body' :
+             loadCp(requestIp) ? 'store-requestIp' :
+             (client_ip && loadCp(client_ip)) ? 'store-clientIp' : 'HARDCODED') +
+            ` action=${effective.substring(0, 60)}`);
 
-        if (effective) {
-            // Browser-based pfSense auth — no SSH needed
-            cpStore.delete(requestIp);
-            if (client_ip) cpStore.delete(client_ip);
-            console.log(`[CP-AUTH] authorizing via browser form — action: ${effective}`);
+        // Always return browser-based pfSense auth form.
+        // effective is guaranteed set (worst case = hardcoded PFSENSE_CP_URL).
+        cpStore.delete(requestIp);
+        if (client_ip) cpStore.delete(client_ip);
+        console.log(`[CP-AUTH] posting form → ${effective.substring(0, 80)}`);
 
-            return res.send(`<!DOCTYPE html><html><head>
+        return res.send(`<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Connecting...</title>
 <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
 display:flex;align-items:center;justify-content:center;min-height:100vh}
@@ -1532,32 +1938,22 @@ max-width:340px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.1)}
 .sp{width:48px;height:48px;border:4px solid #e0e0e0;border-top-color:#005c42;
 border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px}
 @keyframes spin{to{transform:rotate(360deg)}}
-h2{color:#005c42;font-size:20px;margin:0 0 8px}p{color:#888;font-size:13px}</style></head>
+h2{color:#005c42;font-size:20px;margin:0 0 8px}p{color:#888;font-size:13px}
+.skip{margin-top:18px;font-size:12px;color:#bbb}
+.skip a{color:#005c42;text-decoration:none}</style></head>
 <body><div class="c">
 <div class="sp"></div>
 <h2>Granting Wi-Fi Access...</h2>
 <p>Please wait a moment.</p>
+<div class="skip">Taking too long? <a href="http://124.43.216.136:45080/portal/success">Tap here</a></div>
 </div>
 <form id="f" method="POST" action="${effective}">
   <input type="hidden" name="redirurl" value="http://124.43.216.136:45080/portal/success">
   <input type="hidden" name="zone"     value="main_zone">
   <input type="hidden" name="accept"   value="Continue">
 </form>
-<script>setTimeout(function(){document.getElementById('f').submit();},1500);</script>
+<script>setTimeout(function(){ document.getElementById('f').submit(); }, 1500);</script>
 </body></html>`);
-        }
-
-        // SSH / mock fallback
-        try {
-            await authorizeMacOnPfSense(mac, requestIp, ev.policies?.sessionDurationMinutes);
-        } catch (e: any) {
-            console.warn('[SSH] non-fatal:', e.message);
-        }
-
-        return res.status(200).json({
-            success: true, message: 'Wi-Fi Access Granted',
-            sessionId: sessionRef._id, expiresAt: sessionExpiresAt
-        });
 
     } catch (err: any) {
         console.error('/verify-otp error', err);
