@@ -257,22 +257,318 @@
 //     );
 // }
 
+// import React, { useState, useEffect } from 'react';
+// import { BrowserRouter as Router, Routes, Route, useParams, useSearchParams } from 'react-router-dom';
+// import AdminDashboard from './AdminDashboard';
+
+// const API_URL = '/api';
+
+// // ---------------------------------------------------------
+// // API helpers
+// // ---------------------------------------------------------
+// const api = {
+//     getEventDetails: async (eventId: string) => {
+//         const res = await fetch(`${API_URL}/events/${eventId}`);
+//         if (!res.ok) throw new Error('Event not found');
+//         return await res.json();
+//     },
+
+//     requestOtp: async (mobile: string, eventId: string) => {
+//         const res = await fetch(`${API_URL}/request-otp`, {
+//             method: 'POST',
+//             headers: { 'Content-Type': 'application/json' },
+//             body: JSON.stringify({ mobile, eventId })
+//         });
+//         const data = await res.json();
+//         if (!data.success) throw new Error(data.error);
+//         return data;
+//     },
+
+//     // verifyOtp sends cp_action so the server can authorize the phone
+//     // directly through pfSense's browser-based flow.
+//     // The server may return HTML (captive portal path) or JSON (direct path).
+//     verifyOtp: async (mobile: string, otp: string, eventId: string, mac: string, cpAction: string) => {
+//         const res = await fetch(`${API_URL}/verify-otp`, {
+//             method: 'POST',
+//             headers: { 'Content-Type': 'application/json' },
+//             body: JSON.stringify({
+//                 mobile,
+//                 otp,
+//                 eventId,
+//                 macAddress: mac,
+//                 cp_action: cpAction
+//             })
+//         });
+
+//         // PATH A: server returned HTML — it contains an auto-submitting form
+//         // that tells the phone's browser to POST to pfSense directly.
+//         // Replace the entire page with that HTML so pfSense can authorize.
+//         const contentType = res.headers.get('content-type') || '';
+//         if (contentType.includes('text/html')) {
+//             const html = await res.text();
+//             document.open();
+//             document.write(html);
+//             document.close();
+//             // Return a sentinel so the caller knows to stop (page is being replaced)
+//             return { success: true, redirecting: true };
+//         }
+
+//         // PATH B: JSON response (direct/test access without captive portal)
+//         const data = await res.json();
+//         if (!res.ok || !data.success) throw new Error(data.error || 'OTP verification failed');
+//         return data;
+//     }
+// };
+
+// // ---------------------------------------------------------
+// // EventPortal — the user-facing OTP page
+// // Reads cp_action and client_ip from the URL so that after
+// // a successful OTP the phone can authorize itself on pfSense.
+// // ---------------------------------------------------------
+// const EventPortal = () => {
+//     const { eventId } = useParams();
+//     const [searchParams] = useSearchParams();
+
+//     // These come from the captive portal via portal.html → /landing → here
+//     const macAddress = searchParams.get('mac') || 'unknown';
+//     const cpAction   = searchParams.get('cp_action') || '';
+
+//     const [eventDetails, setEventDetails] = useState<any>(null);
+//     const [mobile, setMobile]             = useState('');
+//     const [otp, setOtp]                   = useState('');
+//     const [step, setStep]                 = useState<'LOADING' | 'MOBILE' | 'OTP' | 'SUCCESS' | 'ERROR'>('LOADING');
+//     const [errorMsg, setErrorMsg]         = useState('');
+//     const [isLoading, setIsLoading]       = useState(false);
+
+//     useEffect(() => {
+//         if (eventId) {
+//             api.getEventDetails(eventId)
+//                 .then(data => { setEventDetails(data); setStep('MOBILE'); })
+//                 .catch(() => { setStep('ERROR'); setErrorMsg('Invalid or inactive event. Please scan the QR code again.'); });
+//         }
+//     }, [eventId]);
+
+//     const handleRequestOtp = async (e: React.FormEvent) => {
+//         e.preventDefault();
+//         if (mobile.length !== 9) { setErrorMsg('Please enter a valid 9-digit mobile number.'); return; }
+//         setIsLoading(true);
+//         try {
+//             await api.requestOtp(mobile, eventId as string);
+//             setStep('OTP');
+//             setErrorMsg('');
+//         } catch (error: any) {
+//             setErrorMsg(error.message || 'Failed to send OTP. Please try again.');
+//         } finally {
+//             setIsLoading(false);
+//         }
+//     };
+
+//     const handleVerifyOtp = async (e: React.FormEvent) => {
+//         e.preventDefault();
+//         setIsLoading(true);
+//         try {
+//             const result = await api.verifyOtp(mobile, otp, eventId as string, macAddress, cpAction);
+
+//             // If the page is being replaced by the HTML redirect form, stop here.
+//             // The browser will navigate away on its own.
+//             if (result.redirecting) return;
+
+//             // JSON path (direct/test access) — show success screen
+//             setStep('SUCCESS');
+//             setErrorMsg('');
+//         } catch (error: any) {
+//             setErrorMsg(error.message || 'Invalid OTP. Please try again.');
+//         } finally {
+//             setIsLoading(false);
+//         }
+//     };
+
+//     // ---- Render states ----
+
+//     if (step === 'LOADING') {
+//         return (
+//             <div className="min-h-screen flex items-center justify-center bg-gray-50">
+//                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-700"></div>
+//             </div>
+//         );
+//     }
+
+//     if (step === 'ERROR') {
+//         return (
+//             <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gray-100">
+//                 <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md w-full border border-gray-200">
+//                     <div className="text-5xl mb-4">⚠️</div>
+//                     <h2 className="text-2xl font-bold text-gray-800">Connection Error</h2>
+//                     <p className="text-gray-600 mt-2">{errorMsg}</p>
+//                 </div>
+//             </div>
+//         );
+//     }
+
+//     const { branding, name } = eventDetails;
+
+//     return (
+//         <div
+//             className="min-h-screen flex flex-col items-center justify-center p-4 font-sans"
+//             style={{ backgroundColor: branding.backgroundColor || '#f3f4f6' }}
+//         >
+//             <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100">
+//                 {/* Colour bar */}
+//                 <div className="h-3 w-full" style={{ backgroundColor: branding.primaryColor }} />
+
+//                 <div className="p-8">
+//                     {/* Logo */}
+//                     <div className="flex justify-center mb-6">
+//                         <img
+//                             src={branding.logoUrl}
+//                             alt={`${name} Logo`}
+//                             className="h-16 object-contain"
+//                             onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x80?text=Event+Logo'; }}
+//                         />
+//                     </div>
+
+//                     <h1 className="text-2xl font-bold text-center text-gray-800 mb-1">Welcome to {name}</h1>
+//                     <p className="text-center text-gray-500 mb-8 text-sm">Complimentary High-Speed Wi-Fi</p>
+
+//                     {/* Error message */}
+//                     {errorMsg && (
+//                         <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-6 text-center">
+//                             {errorMsg}
+//                         </div>
+//                     )}
+
+//                     {/* STEP: Enter mobile */}
+//                     {step === 'MOBILE' && (
+//                         <form onSubmit={handleRequestOtp} className="space-y-6">
+//                             <div>
+//                                 <label className="block text-sm font-semibold text-gray-700 mb-2">Mobile Number</label>
+//                                 <div className="flex items-center rounded-xl border border-gray-200 shadow-sm focus-within:ring-2"
+//                                      style={{ '--tw-ring-color': branding.primaryColor } as any}>
+//                                     <div className="pl-4 pr-3 py-3 border-r border-gray-200 text-gray-500 font-medium bg-gray-50 rounded-l-xl">
+//                                         +94
+//                                     </div>
+//                                     <input
+//                                         type="tel"
+//                                         required
+//                                         pattern="[0-9]{9}"
+//                                         placeholder="771234567"
+//                                         className="w-full pl-3 pr-4 py-3 rounded-r-xl outline-none text-gray-800 placeholder-gray-400 font-medium"
+//                                         value={mobile}
+//                                         onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
+//                                         disabled={isLoading}
+//                                     />
+//                                 </div>
+//                             </div>
+
+//                             <button
+//                                 type="submit"
+//                                 disabled={isLoading}
+//                                 className="w-full py-3.5 rounded-xl text-white font-bold shadow-lg hover:opacity-90 transition-all disabled:opacity-70 flex justify-center items-center"
+//                                 style={{ backgroundColor: branding.primaryColor }}
+//                             >
+//                                 {isLoading
+//                                     ? <span className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></span>
+//                                     : 'Send OTP via SMS'}
+//                             </button>
+//                         </form>
+//                     )}
+
+//                     {/* STEP: Enter OTP */}
+//                     {step === 'OTP' && (
+//                         <form onSubmit={handleVerifyOtp} className="space-y-6">
+//                             <div>
+//                                 <label className="block text-sm font-semibold text-gray-700 mb-2">Verification Code</label>
+//                                 <input
+//                                     type="text"
+//                                     required
+//                                     maxLength={6}
+//                                     placeholder="••••••"
+//                                     className="w-full px-4 py-4 text-center tracking-[0.75em] text-2xl font-bold text-gray-800 rounded-xl border border-gray-200 focus:ring-2 outline-none shadow-sm"
+//                                     style={{ '--tw-ring-color': branding.primaryColor } as any}
+//                                     value={otp}
+//                                     onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+//                                     disabled={isLoading}
+//                                 />
+//                                 <p className="text-xs text-center text-gray-500 mt-3">
+//                                     Code sent to +94 {mobile}.{' '}
+//                                     <button type="button" onClick={() => setStep('MOBILE')} className="text-blue-600 underline">
+//                                         Change number
+//                                     </button>
+//                                 </p>
+//                             </div>
+
+//                             <button
+//                                 type="submit"
+//                                 disabled={isLoading}
+//                                 className="w-full py-3.5 rounded-xl text-white font-bold shadow-lg hover:opacity-90 transition-all disabled:opacity-70 flex justify-center items-center"
+//                                 style={{ backgroundColor: branding.primaryColor }}
+//                             >
+//                                 {isLoading
+//                                     ? <span className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></span>
+//                                     : 'Connect to Internet'}
+//                             </button>
+//                         </form>
+//                     )}
+
+//                     {/* STEP: Success (JSON/direct path — captive portal path replaces page) */}
+//                     {step === 'SUCCESS' && (
+//                         <div className="text-center py-4">
+//                             <div className="w-24 h-24 mx-auto bg-green-100 rounded-full flex items-center justify-center mb-6">
+//                                 <svg className="w-12 h-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+//                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
+//                                 </svg>
+//                             </div>
+//                             <h2 className="text-2xl font-bold text-gray-800 mb-2">You're Connected!</h2>
+//                             <p className="text-gray-500 mb-8">Enjoy the high-speed internet.</p>
+//                             <a
+//                                 href="https://www.google.com"
+//                                 className="inline-block px-8 py-3 rounded-full border-2 border-gray-200 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
+//                             >
+//                                 Start Browsing
+//                             </a>
+//                         </div>
+//                     )}
+//                 </div>
+
+//                 {step === 'MOBILE' && (
+//                     <div className="bg-gray-50 p-4 text-center border-t border-gray-100">
+//                         <p className="text-xs text-gray-500">
+//                             By continuing, you agree to the{' '}
+//                             <a href={branding.termsUrl} className="underline text-gray-600">Terms & Conditions</a>.
+//                         </p>
+//                     </div>
+//                 )}
+//             </div>
+//         </div>
+//     );
+// };
+
+// // ---------------------------------------------------------
+// // App — route definitions
+// // ---------------------------------------------------------
+// export default function App() {
+//     return (
+//         <Router>
+//             <Routes>
+//                 <Route path="/portal/:eventId" element={<EventPortal />} />
+//                 <Route path="/"                element={<AdminDashboard />} />
+//             </Routes>
+//         </Router>
+//     );
+// }
+
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useParams, useSearchParams } from 'react-router-dom';
 import AdminDashboard from './AdminDashboard';
 
 const API_URL = '/api';
 
-// ---------------------------------------------------------
-// API helpers
-// ---------------------------------------------------------
 const api = {
     getEventDetails: async (eventId: string) => {
         const res = await fetch(`${API_URL}/events/${eventId}`);
         if (!res.ok) throw new Error('Event not found');
         return await res.json();
     },
-
     requestOtp: async (mobile: string, eventId: string) => {
         const res = await fetch(`${API_URL}/request-otp`, {
             method: 'POST',
@@ -283,37 +579,20 @@ const api = {
         if (!data.success) throw new Error(data.error);
         return data;
     },
-
-    // verifyOtp sends cp_action so the server can authorize the phone
-    // directly through pfSense's browser-based flow.
-    // The server may return HTML (captive portal path) or JSON (direct path).
     verifyOtp: async (mobile: string, otp: string, eventId: string, mac: string, cpAction: string) => {
         const res = await fetch(`${API_URL}/verify-otp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                mobile,
-                otp,
-                eventId,
-                macAddress: mac,
-                cp_action: cpAction
-            })
+            body: JSON.stringify({ mobile, otp, eventId, macAddress: mac, cp_action: cpAction })
         });
-
-        // PATH A: server returned HTML — it contains an auto-submitting form
-        // that tells the phone's browser to POST to pfSense directly.
-        // Replace the entire page with that HTML so pfSense can authorize.
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('text/html')) {
             const html = await res.text();
             document.open();
             document.write(html);
             document.close();
-            // Return a sentinel so the caller knows to stop (page is being replaced)
             return { success: true, redirecting: true };
         }
-
-        // PATH B: JSON response (direct/test access without captive portal)
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.error || 'OTP verification failed');
         return data;
@@ -321,15 +600,96 @@ const api = {
 };
 
 // ---------------------------------------------------------
-// EventPortal — the user-facing OTP page
-// Reads cp_action and client_ip from the URL so that after
-// a successful OTP the phone can authorize itself on pfSense.
+// SuccessPage — pfSense redirects here after authorization.
+// Counts down 4 seconds then opens Google so the phone OS
+// detects real internet and clears the "no internet" state.
+// ---------------------------------------------------------
+const SuccessPage = () => {
+    const [count, setCount] = useState(4);
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setCount(prev => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    window.location.href = 'https://www.google.com';
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(timer);
+    }, []);
+
+    return (
+        <div style={{
+            margin: 0,
+            fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+            background: 'linear-gradient(135deg, #005c42, #00a86b)',
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px'
+        }}>
+            <div style={{
+                background: 'white',
+                borderRadius: '24px',
+                padding: '48px 28px',
+                textAlign: 'center',
+                maxWidth: '340px',
+                width: '100%',
+                boxShadow: '0 20px 60px rgba(0,0,0,.25)'
+            }}>
+                <div style={{ fontSize: '64px', marginBottom: '16px' }}>🎉</div>
+                <h2 style={{ color: '#005c42', fontSize: '24px', fontWeight: 700, margin: '0 0 10px' }}>
+                    You're Connected!
+                </h2>
+                <p style={{ color: '#666', fontSize: '14px', margin: '0 0 20px', lineHeight: 1.6 }}>
+                    Wi-Fi access granted.<br />Enjoy the event!
+                </p>
+                <div style={{ fontSize: '36px', fontWeight: 700, color: '#005c42', margin: '0 0 12px' }}>
+                    {count}
+                </div>
+                <div style={{ background: '#e8f5f0', borderRadius: '99px', height: '8px', marginBottom: '20px', overflow: 'hidden' }}>
+                    <div style={{
+                        background: '#005c42',
+                        height: '100%',
+                        borderRadius: '99px',
+                        width: `${(count / 4) * 100}%`,
+                        transition: 'width 1s linear'
+                    }} />
+                </div>
+                <p style={{ color: '#aaa', fontSize: '12px', margin: '0 0 20px' }}>
+                    Opening Google in a moment...
+                </p>
+                <a
+                    href="https://www.google.com"
+                    style={{
+                        display: 'inline-block',
+                        background: '#005c42',
+                        color: 'white',
+                        padding: '14px 32px',
+                        borderRadius: '12px',
+                        textDecoration: 'none',
+                        fontWeight: 700,
+                        fontSize: '15px'
+                    }}
+                >
+                    Go Now
+                </a>
+            </div>
+        </div>
+    );
+};
+
+// ---------------------------------------------------------
+// EventPortal — user-facing OTP page
 // ---------------------------------------------------------
 const EventPortal = () => {
     const { eventId } = useParams();
     const [searchParams] = useSearchParams();
 
-    // These come from the captive portal via portal.html → /landing → here
     const macAddress = searchParams.get('mac') || 'unknown';
     const cpAction   = searchParams.get('cp_action') || '';
 
@@ -344,7 +704,10 @@ const EventPortal = () => {
         if (eventId) {
             api.getEventDetails(eventId)
                 .then(data => { setEventDetails(data); setStep('MOBILE'); })
-                .catch(() => { setStep('ERROR'); setErrorMsg('Invalid or inactive event. Please scan the QR code again.'); });
+                .catch(() => {
+                    setStep('ERROR');
+                    setErrorMsg('Invalid or inactive event. Please scan the QR code again.');
+                });
         }
     }, [eventId]);
 
@@ -368,12 +731,7 @@ const EventPortal = () => {
         setIsLoading(true);
         try {
             const result = await api.verifyOtp(mobile, otp, eventId as string, macAddress, cpAction);
-
-            // If the page is being replaced by the HTML redirect form, stop here.
-            // The browser will navigate away on its own.
             if (result.redirecting) return;
-
-            // JSON path (direct/test access) — show success screen
             setStep('SUCCESS');
             setErrorMsg('');
         } catch (error: any) {
@@ -382,8 +740,6 @@ const EventPortal = () => {
             setIsLoading(false);
         }
     };
-
-    // ---- Render states ----
 
     if (step === 'LOADING') {
         return (
@@ -413,11 +769,8 @@ const EventPortal = () => {
             style={{ backgroundColor: branding.backgroundColor || '#f3f4f6' }}
         >
             <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100">
-                {/* Colour bar */}
                 <div className="h-3 w-full" style={{ backgroundColor: branding.primaryColor }} />
-
                 <div className="p-8">
-                    {/* Logo */}
                     <div className="flex justify-center mb-6">
                         <img
                             src={branding.logoUrl}
@@ -426,18 +779,15 @@ const EventPortal = () => {
                             onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x80?text=Event+Logo'; }}
                         />
                     </div>
-
                     <h1 className="text-2xl font-bold text-center text-gray-800 mb-1">Welcome to {name}</h1>
                     <p className="text-center text-gray-500 mb-8 text-sm">Complimentary High-Speed Wi-Fi</p>
 
-                    {/* Error message */}
                     {errorMsg && (
                         <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-6 text-center">
                             {errorMsg}
                         </div>
                     )}
 
-                    {/* STEP: Enter mobile */}
                     {step === 'MOBILE' && (
                         <form onSubmit={handleRequestOtp} className="space-y-6">
                             <div>
@@ -459,7 +809,6 @@ const EventPortal = () => {
                                     />
                                 </div>
                             </div>
-
                             <button
                                 type="submit"
                                 disabled={isLoading}
@@ -473,7 +822,6 @@ const EventPortal = () => {
                         </form>
                     )}
 
-                    {/* STEP: Enter OTP */}
                     {step === 'OTP' && (
                         <form onSubmit={handleVerifyOtp} className="space-y-6">
                             <div>
@@ -496,7 +844,6 @@ const EventPortal = () => {
                                     </button>
                                 </p>
                             </div>
-
                             <button
                                 type="submit"
                                 disabled={isLoading}
@@ -510,7 +857,6 @@ const EventPortal = () => {
                         </form>
                     )}
 
-                    {/* STEP: Success (JSON/direct path — captive portal path replaces page) */}
                     {step === 'SUCCESS' && (
                         <div className="text-center py-4">
                             <div className="w-24 h-24 mx-auto bg-green-100 rounded-full flex items-center justify-center mb-6">
@@ -545,13 +891,17 @@ const EventPortal = () => {
 
 // ---------------------------------------------------------
 // App — route definitions
+// IMPORTANT: /portal/success must come BEFORE /portal/:eventId
+// otherwise React Router matches "success" as an eventId param
+// and shows "Connection Error" instead of the success page.
 // ---------------------------------------------------------
 export default function App() {
     return (
         <Router>
             <Routes>
+                <Route path="/portal/success" element={<SuccessPage />} />
                 <Route path="/portal/:eventId" element={<EventPortal />} />
-                <Route path="/"                element={<AdminDashboard />} />
+                <Route path="/"               element={<AdminDashboard />} />
             </Routes>
         </Router>
     );
