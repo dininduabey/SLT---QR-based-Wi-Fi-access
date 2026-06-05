@@ -738,6 +738,22 @@ h2{color:#005c42;font-size:20px;margin:0 0 8px}p{color:#888;font-size:13px}
     }
 });
 
+// ---------------------------------------------------------
+// Admin: Login
+// ---------------------------------------------------------
+app.post('/admin/login', (req: Request, res: Response): any => {
+    const { username, password } = req.body;
+    const validUser = process.env.ADMIN_USERNAME || 'admin';
+    const validPass = process.env.ADMIN_PASSWORD || 'slt@wifi2025';
+
+    if (username === validUser && password === validPass) {
+        // Simple token — timestamp + secret. Good enough for internal admin tool.
+        const token = Buffer.from(`${username}:${Date.now()}:${validPass}`).toString('base64');
+        return res.status(200).json({ success: true, token });
+    }
+    return res.status(401).json({ success: false, error: 'Invalid username or password' });
+});
+
 // ==================================================================
 // Admin: Create Event
 // ==================================================================
