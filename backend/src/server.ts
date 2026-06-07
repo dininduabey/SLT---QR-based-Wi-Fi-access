@@ -1235,6 +1235,26 @@ app.get('/admin/pfsense-poll', (_req: Request, res: Response) => {
     return res.json({ clear: false });
 });
 
+// GET /api/admin/pfsense-event-policy
+// Called by pfSense poller every 60 seconds to check session limits.
+// Returns the active event's session duration so the poller can
+// disconnect clients whose sessions have expired.
+app.get('/admin/pfsense-event-policy', async (_req: Request, res: Response) => {
+    try {
+        const activeEvent = await EventModel.findOne(
+            { status: 'active' }, {}, { sort: { createdAt: -1 } }
+        );
+        if (!activeEvent || !activeEvent.policies?.sessionDurationMinutes) {
+            return res.json({ sessionDurationMinutes: 0 });
+        }
+        return res.json({
+            sessionDurationMinutes: activeEvent.policies.sessionDurationMinutes
+        });
+    } catch {
+        return res.json({ sessionDurationMinutes: 0 });
+    }
+});
+
 // ==================================================================
 // POST /admin/events  — Create Event
 // ==================================================================
