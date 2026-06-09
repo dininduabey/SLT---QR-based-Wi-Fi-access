@@ -14,8 +14,6 @@ export interface IEvent extends Document {
         termsUrl: string;
     };
     policies: {
-        bandwidthMbps: number;
-        dataLimitMb: number;
         sessionDurationMinutes: number;
     } | null;
     createdAt: Date;
@@ -34,8 +32,6 @@ const EventSchema = new Schema({
     },
     policies: {
         type: {
-            bandwidthMbps: Number,
-            dataLimitMb: Number,
             sessionDurationMinutes: Number,
         },
         default: null

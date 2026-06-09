@@ -1,25 +1,34 @@
+"use strict";
 // import 'dotenv/config';
 // import express, { Request, Response } from 'express';
 // import mongoose from 'mongoose';
 // import cors from 'cors';
 // import crypto from 'crypto';
-
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
 // import { authorizeMacOnPfSense, revokeMacOnPfSense } from './pfsense';
 // import { sendOtpViaSlt } from './smsGateway';
 // import { EventModel, OtpModel, SessionModel, AuditLogModel } from './models';
-
 // const MONGODB_URI = process.env.MONGODB_URI ||
 //     'mongodb://dpd:digital%40456@192.168.100.111:3401/slt_wifi_portal?authSource=admin';
-
 // mongoose.connect(MONGODB_URI)
 //     .then(() => console.log('MongoDB connected!'))
 //     .catch(err => console.error('MongoDB connection failed:', err));
-
 // const app = express();
 // app.use(cors());
 // app.use(express.json());
 // app.set('trust proxy', true);
-
 // // ------------------------------------------------------------------
 // // cp_action store
 // //
@@ -34,7 +43,6 @@
 // interface CpEntry { action: string; storedAt: number; }
 // const cpStore = new Map<string, CpEntry>();
 // const CP_TTL  = 30 * 60 * 1000; // 30 minutes
-
 // function saveCp(ip: string, action: string) {
 //     if (!action || action.includes('$')) return;   // un-substituted placeholder
 //     cpStore.set(ip, { action, storedAt: Date.now() });
@@ -43,19 +51,16 @@
 //     const cutoff = Date.now() - CP_TTL;
 //     cpStore.forEach((v, k) => { if (v.storedAt < cutoff) cpStore.delete(k); });
 // }
-
 // function loadCp(ip: string): string {
 //     const e = cpStore.get(ip);
 //     if (!e) return '';
 //     if (Date.now() - e.storedAt > CP_TTL) { cpStore.delete(ip); return ''; }
 //     return e.action;
 // }
-
 // // 1×1 transparent GIF returned by /cp-ping
 // const PIXEL = Buffer.from(
 //     'R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==', 'base64'
 // );
-
 // // ------------------------------------------------------------------
 // // Helper
 // // ------------------------------------------------------------------
@@ -64,7 +69,6 @@
 //     if (typeof fwd === 'string') return fwd.split(',')[0].trim();
 //     return req.ip || req.socket.remoteAddress || 'unknown';
 // }
-
 // // ------------------------------------------------------------------
 // // Seeder
 // // ------------------------------------------------------------------
@@ -84,7 +88,6 @@
 //     } catch (e) { console.error('Seed failed', e); }
 // }
 // mongoose.connection.once('open', seedDemoEvent);
-
 // // ==================================================================
 // // GET /cp-ping
 // //
@@ -97,17 +100,13 @@
 //     const cp_action  = (req.query.cp_action  as string) || '';
 //     const client_ip  = (req.query.client_ip  as string) || '';
 //     const requestIp  = getClientIp(req);
-
 //     saveCp(requestIp, cp_action);
 //     if (client_ip) saveCp(client_ip, cp_action);
-
 //     console.log(`[CP-PING] requestIp=${requestIp} clientIp=${client_ip} hasAction=${!!cp_action && !cp_action.includes('$')}`);
-
 //     res.setHeader('Content-Type', 'image/gif');
 //     res.setHeader('Cache-Control', 'no-cache, no-store');
 //     res.send(PIXEL);
 // });
-
 // // ==================================================================
 // // GET /landing
 // // ==================================================================
@@ -116,15 +115,12 @@
 //         const cp_action = (req.query.cp_action as string) || '';
 //         const client_ip = (req.query.client_ip as string) || '';
 //         const requestIp = getClientIp(req);
-
 //         // Store from URL params as well (user clicked the button)
 //         saveCp(requestIp, cp_action);
 //         if (client_ip) saveCp(client_ip, cp_action);
-
 //         const activeEvent = await EventModel.findOne(
 //             { status: 'active' }, {}, { sort: { createdAt: -1 } }
 //         );
-
 //         if (!activeEvent) {
 //             return res.send(`<!DOCTYPE html><html><head>
 // <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -137,20 +133,17 @@
 // <p>There is no active event right now.<br>Please contact the event organizer.</p>
 // </div></body></html>`);
 //         }
-
 //         // Pass cp_action and client_ip through so the frontend has them
 //         const qs = new URLSearchParams();
 //         if (cp_action && !cp_action.includes('$')) qs.set('cp_action', cp_action);
 //         if (client_ip) qs.set('client_ip', client_ip);
 //         const q = qs.toString();
-
 //         return res.redirect(`/portal/${activeEvent.eventId}${q ? '?' + q : ''}`);
 //     } catch (err) {
 //         console.error('/landing error', err);
 //         return res.status(500).send('Server error. Please try again.');
 //     }
 // });
-
 // // ==================================================================
 // // GET /portal/success   — pfSense redirects here after auth
 // // ==================================================================
@@ -173,7 +166,6 @@
 // <a href="https://www.google.com">Start Browsing</a>
 // </div></body></html>`);
 // });
-
 // // ==================================================================
 // // POST /request-otp
 // // ==================================================================
@@ -181,28 +173,23 @@
 //     try {
 //         const { mobile, eventId } = req.body;
 //         if (!mobile || !eventId) return res.status(400).json({ error: 'Missing mobile or eventId' });
-
 //         const ev = await EventModel.findOne({ eventId });
 //         if (!ev)                    return res.status(404).json({ error: 'Event not found' });
 //         if (ev.status !== 'active') return res.status(403).json({ error: 'Event is not active' });
-
 //         const otp       = crypto.randomInt(100000, 999999).toString();
 //         const expiresAt = new Date(Date.now() + 5 * 60_000);
-
 //         await OtpModel.findOneAndUpdate(
 //             { mobile, eventId },
 //             { otp, expiresAt, attempts: 0 },
 //             { upsert: true, new: true }
 //         );
 //         await sendOtpViaSlt(mobile, otp, ev.name);
-
 //         return res.status(200).json({ success: true, message: 'OTP sent successfully' });
 //     } catch (err: any) {
 //         console.error('/request-otp error', err);
 //         return res.status(500).json({ error: err.message || 'Internal server error' });
 //     }
 // });
-
 // // ==================================================================
 // // POST /verify-otp
 // //
@@ -217,65 +204,52 @@
 //         const { mobile, otp, eventId, macAddress, cp_action, client_ip } = req.body;
 //         if (!mobile || !otp || !eventId)
 //             return res.status(400).json({ error: 'Missing required fields' });
-
 //         const requestIp = getClientIp(req);
 //         const mac       = macAddress || 'unknown';
-
 //         // --- verify OTP ---
 //         const otpDoc = await OtpModel.findOne({ mobile, eventId });
 //         if (!otpDoc) return res.status(401).json({ error: 'Invalid or expired OTP' });
-
 //         if (otp !== '123456' && otpDoc.otp !== otp) {
 //             otpDoc.attempts += 1; await otpDoc.save();
 //             return res.status(401).json({ error: 'Invalid OTP' });
 //         }
 //         if (otpDoc.expiresAt < new Date())
 //             return res.status(401).json({ error: 'OTP expired' });
-
 //         // --- fetch event ---
 //         const ev = await EventModel.findOne({ eventId });
 //         if (!ev)                    return res.status(404).json({ error: 'Event not found' });
 //         if (ev.status !== 'active') return res.status(403).json({ error: 'Event is not active' });
-
 //         // --- create session ---
 //         const sessionExpiresAt = ev.policies?.sessionDurationMinutes
 //             ? new Date(Date.now() + ev.policies.sessionDurationMinutes * 60_000) : null;
-
 //         const sessionRef = await new SessionModel({
 //             eventId, mobile, macAddress: mac, clientIp: requestIp,
 //             expiresAt: sessionExpiresAt, status: 'active', dataUsageMb: 0
 //         }).save();
-
 //         await OtpModel.deleteOne({ _id: otpDoc._id });
 //         await new AuditLogModel({ action: 'session_created', eventId, mobile, macAddress: mac, clientIp: requestIp }).save();
-
 //         // --- resolve cp_action ---
 //         const clean = (s: string) => s && !s.includes('$') ? s.trim() : '';
-
 //         // pfSense captive portal HTTP server always listens on port 8000 on LAN.
 //         // This hardcoded URL works even when $PORTAL_ACTION$ was never captured.
 //         // With "None" auth, pfSense authorizes the posting client by source IP —
 //         // no session token required.
 //         const PFSENSE_CP_URL = 'http://172.31.98.1:8000/index.php';
-
 //         const effective =
 //             clean(cp_action)                       ||  // from body (portal button path)
 //             loadCp(requestIp)                      ||  // beacon stored it by NAT IP
 //             (client_ip ? loadCp(client_ip) : '')   ||  // backup: $CLIENT_IP$ from pfSense
 //             PFSENSE_CP_URL;                            // hardcoded fallback — always present
-
 //         console.log(`[VERIFY-OTP] ip=${requestIp} source=` +
 //             (clean(cp_action) ? 'body' :
 //              loadCp(requestIp) ? 'store-requestIp' :
 //              (client_ip && loadCp(client_ip)) ? 'store-clientIp' : 'HARDCODED') +
 //             ` action=${effective.substring(0, 60)}`);
-
 //         // Always return browser-based pfSense auth form.
 //         // effective is guaranteed set (worst case = hardcoded PFSENSE_CP_URL).
 //         cpStore.delete(requestIp);
 //         if (client_ip) cpStore.delete(client_ip);
 //         console.log(`[CP-AUTH] posting form → ${effective.substring(0, 80)}`);
-
 //         return res.send(`<!DOCTYPE html><html><head>
 // <meta name="viewport" content="width=device-width,initial-scale=1"><title>Connecting...</title>
 // <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
@@ -301,13 +275,11 @@
 // </form>
 // <script>setTimeout(function(){ document.getElementById('f').submit(); }, 1500);</script>
 // </body></html>`);
-
 //     } catch (err: any) {
 //         console.error('/verify-otp error', err);
 //         return res.status(500).json({ error: err.message || 'Internal server error' });
 //     }
 // });
-
 // // ==================================================================
 // // Admin: Create Event
 // // ==================================================================
@@ -326,7 +298,6 @@
 //         return res.status(201).json({ success: true, message: 'Event created successfully' });
 //     } catch { return res.status(500).json({ error: 'Internal server error' }); }
 // });
-
 // // ==================================================================
 // // Admin: Get Event Details
 // // ==================================================================
@@ -337,7 +308,6 @@
 //         return res.status(200).json(ev);
 //     } catch { return res.status(500).json({ error: 'Internal server error' }); }
 // });
-
 // // ==================================================================
 // // Admin: Adjourn Event
 // // ==================================================================
@@ -352,7 +322,6 @@
 //         return res.status(200).json({ success: true, message: `Adjourned. ${sessions.length} sessions terminated.` });
 //     } catch { return res.status(500).json({ error: 'Internal server error' }); }
 // });
-
 // // ==================================================================
 // // Admin: Download CSV Report
 // // ==================================================================
@@ -368,7 +337,6 @@
 //         return res.send(header + rows);
 //     } catch { return res.status(500).json({ error: 'Internal server error' }); }
 // });
-
 // // ==================================================================
 // // Debug endpoint — check what's in cpStore for an IP
 // // Remove before production!
@@ -385,44 +353,35 @@
 //         all_stored_ips: allKeys
 //     });
 // });
-
 // const PORT = process.env.PORT || 8080;
 // app.listen(PORT, () => {
 //     console.log(`SLT Wi-Fi Auth API on port ${PORT}`);
 //     console.log(`pfSense: ${process.env.PFSENSE_HOST || '(mock)'}`);
 //     console.log(`SMS:     ${process.env.SLT_SMS_GATEWAY_URL || '(mock)'}`);
 // });
-
 // import 'dotenv/config';
 // import express, { Request, Response } from 'express';
 // import mongoose from 'mongoose';
 // import cors from 'cors';
 // import crypto from 'crypto';
-
 // import { authorizeMacOnPfSense, revokeMacOnPfSense } from './pfsense';
 // import { sendOtpViaSlt } from './smsGateway';
 // import { EventModel, OtpModel, SessionModel, AuditLogModel } from './models';
-
 // const MONGODB_URI = process.env.MONGODB_URI ||
 //     'mongodb://dpd:digital%40456@192.168.100.111:3401/slt_wifi_portal?authSource=admin';
-
 // mongoose.connect(MONGODB_URI)
 //     .then(() => console.log('MongoDB connected!'))
 //     .catch(err => console.error('MongoDB connection failed:', err));
-
 // const app = express();
-
 // // ---------------------------------------------------------
 // // Adjournment signal store
 // // pfSense mini PC polls /admin/pfsense-poll every 30 seconds
 // // ---------------------------------------------------------
 // let pendingClearSignal = false;
 // let clearSignalTime    = 0;
-
 // app.use(cors());
 // app.use(express.json());
 // app.set('trust proxy', true);
-
 // // ------------------------------------------------------------------
 // // cp_action store
 // //
@@ -437,7 +396,6 @@
 // interface CpEntry { action: string; storedAt: number; }
 // const cpStore = new Map<string, CpEntry>();
 // const CP_TTL  = 30 * 60 * 1000; // 30 minutes
-
 // function saveCp(ip: string, action: string) {
 //     if (!action || action.includes('$')) return;   // un-substituted placeholder
 //     cpStore.set(ip, { action, storedAt: Date.now() });
@@ -446,19 +404,16 @@
 //     const cutoff = Date.now() - CP_TTL;
 //     cpStore.forEach((v, k) => { if (v.storedAt < cutoff) cpStore.delete(k); });
 // }
-
 // function loadCp(ip: string): string {
 //     const e = cpStore.get(ip);
 //     if (!e) return '';
 //     if (Date.now() - e.storedAt > CP_TTL) { cpStore.delete(ip); return ''; }
 //     return e.action;
 // }
-
 // // 1×1 transparent GIF returned by /cp-ping
 // const PIXEL = Buffer.from(
 //     'R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==', 'base64'
 // );
-
 // // ------------------------------------------------------------------
 // // Helper
 // // ------------------------------------------------------------------
@@ -467,7 +422,6 @@
 //     if (typeof fwd === 'string') return fwd.split(',')[0].trim();
 //     return req.ip || req.socket.remoteAddress || 'unknown';
 // }
-
 // // ------------------------------------------------------------------
 // // Seeder
 // // ------------------------------------------------------------------
@@ -487,7 +441,6 @@
 //     } catch (e) { console.error('Seed failed', e); }
 // }
 // mongoose.connection.once('open', seedDemoEvent);
-
 // // ==================================================================
 // // GET /cp-ping
 // //
@@ -500,17 +453,13 @@
 //     const cp_action  = (req.query.cp_action  as string) || '';
 //     const client_ip  = (req.query.client_ip  as string) || '';
 //     const requestIp  = getClientIp(req);
-
 //     saveCp(requestIp, cp_action);
 //     if (client_ip) saveCp(client_ip, cp_action);
-
 //     console.log(`[CP-PING] requestIp=${requestIp} clientIp=${client_ip} hasAction=${!!cp_action && !cp_action.includes('$')}`);
-
 //     res.setHeader('Content-Type', 'image/gif');
 //     res.setHeader('Cache-Control', 'no-cache, no-store');
 //     res.send(PIXEL);
 // });
-
 // // ==================================================================
 // // GET /landing
 // // ==================================================================
@@ -519,15 +468,12 @@
 //         const cp_action = (req.query.cp_action as string) || '';
 //         const client_ip = (req.query.client_ip as string) || '';
 //         const requestIp = getClientIp(req);
-
 //         // Store from URL params as well (user clicked the button)
 //         saveCp(requestIp, cp_action);
 //         if (client_ip) saveCp(client_ip, cp_action);
-
 //         const activeEvent = await EventModel.findOne(
 //             { status: 'active' }, {}, { sort: { createdAt: -1 } }
 //         );
-
 //         if (!activeEvent) {
 //             return res.send(`<!DOCTYPE html><html><head>
 // <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -540,20 +486,17 @@
 // <p>There is no active event right now.<br>Please contact the event organizer.</p>
 // </div></body></html>`);
 //         }
-
 //         // Pass cp_action and client_ip through so the frontend has them
 //         const qs = new URLSearchParams();
 //         if (cp_action && !cp_action.includes('$')) qs.set('cp_action', cp_action);
 //         if (client_ip) qs.set('client_ip', client_ip);
 //         const q = qs.toString();
-
 //         return res.redirect(`/portal/${activeEvent.eventId}${q ? '?' + q : ''}`);
 //     } catch (err) {
 //         console.error('/landing error', err);
 //         return res.status(500).send('Server error. Please try again.');
 //     }
 // });
-
 // // ==================================================================
 // // GET /portal/success   — pfSense redirects here after auth.
 // // Shows a 4-second countdown then opens Google.
@@ -612,7 +555,6 @@
 // </script>
 // </body></html>`);
 // });
-
 // // ==================================================================
 // // POST /request-otp
 // // ==================================================================
@@ -620,28 +562,23 @@
 //     try {
 //         const { mobile, eventId } = req.body;
 //         if (!mobile || !eventId) return res.status(400).json({ error: 'Missing mobile or eventId' });
-
 //         const ev = await EventModel.findOne({ eventId });
 //         if (!ev)                    return res.status(404).json({ error: 'Event not found' });
 //         if (ev.status !== 'active') return res.status(403).json({ error: 'Event is not active' });
-
 //         const otp       = crypto.randomInt(100000, 999999).toString();
 //         const expiresAt = new Date(Date.now() + 5 * 60_000);
-
 //         await OtpModel.findOneAndUpdate(
 //             { mobile, eventId },
 //             { otp, expiresAt, attempts: 0 },
 //             { upsert: true, new: true }
 //         );
 //         await sendOtpViaSlt(mobile, otp, ev.name);
-
 //         return res.status(200).json({ success: true, message: 'OTP sent successfully' });
 //     } catch (err: any) {
 //         console.error('/request-otp error', err);
 //         return res.status(500).json({ error: err.message || 'Internal server error' });
 //     }
 // });
-
 // // ==================================================================
 // // POST /verify-otp
 // //
@@ -656,64 +593,51 @@
 //         const { mobile, otp, eventId, macAddress, cp_action, client_ip } = req.body;
 //         if (!mobile || !otp || !eventId)
 //             return res.status(400).json({ error: 'Missing required fields' });
-
 //         const requestIp = getClientIp(req);
 //         const mac       = macAddress || 'unknown';
-
 //         // --- verify OTP ---
 //         const otpDoc = await OtpModel.findOne({ mobile, eventId });
 //         if (!otpDoc) return res.status(401).json({ error: 'Invalid or expired OTP' });
-
 //         if (otp !== '123456' && otpDoc.otp !== otp) {
 //             otpDoc.attempts += 1; await otpDoc.save();
 //             return res.status(401).json({ error: 'Invalid OTP' });
 //         }
 //         if (otpDoc.expiresAt < new Date())
 //             return res.status(401).json({ error: 'OTP expired' });
-
 //         // --- fetch event ---
 //         const ev = await EventModel.findOne({ eventId });
 //         if (!ev)                    return res.status(404).json({ error: 'Event not found' });
 //         if (ev.status !== 'active') return res.status(403).json({ error: 'Event is not active' });
-
 //         // --- create session ---
 //         const sessionExpiresAt = ev.policies?.sessionDurationMinutes
 //             ? new Date(Date.now() + ev.policies.sessionDurationMinutes * 60_000) : null;
-
 //         const sessionRef = await new SessionModel({
 //             eventId, mobile, macAddress: mac, clientIp: requestIp,
 //             expiresAt: sessionExpiresAt, status: 'active', dataUsageMb: 0
 //         }).save();
-
 //         await OtpModel.deleteOne({ _id: otpDoc._id });
 //         await new AuditLogModel({ action: 'session_created', eventId, mobile, macAddress: mac, clientIp: requestIp }).save();
-
 //         // --- resolve cp_action ---
 //         const clean = (s: string) => s && !s.includes('$') ? s.trim() : '';
-
 //         // pfSense captive portal HTTP server listens on port 8002 on LAN.
 //         // This hardcoded URL works even when $PORTAL_ACTION$ was never captured.
 //         // With "None" auth, pfSense authorizes the posting client by source IP.
 //         const PFSENSE_CP_URL = 'http://172.31.98.1:8002/index.php?zone=main_zone&redirurl=' + encodeURIComponent('http://124.43.216.136:45080/portal/success');
-
 //         const effective =
 //             clean(cp_action)                       ||  // from body (portal button path)
 //             loadCp(requestIp)                      ||  // beacon stored it by NAT IP
 //             (client_ip ? loadCp(client_ip) : '')   ||  // backup: $CLIENT_IP$ from pfSense
 //             PFSENSE_CP_URL;                            // hardcoded fallback — always present
-
 //         console.log(`[VERIFY-OTP] ip=${requestIp} source=` +
 //             (clean(cp_action) ? 'body' :
 //              loadCp(requestIp) ? 'store-requestIp' :
 //              (client_ip && loadCp(client_ip)) ? 'store-clientIp' : 'HARDCODED') +
 //             ` action=${effective.substring(0, 60)}`);
-
 //         // Always return browser-based pfSense auth form.
 //         // effective is guaranteed set (worst case = hardcoded PFSENSE_CP_URL).
 //         cpStore.delete(requestIp);
 //         if (client_ip) cpStore.delete(client_ip);
 //         console.log(`[CP-AUTH] posting form → ${effective.substring(0, 80)}`);
-
 //         return res.send(`<!DOCTYPE html><html><head>
 // <meta name="viewport" content="width=device-width,initial-scale=1"><title>Connecting...</title>
 // <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
@@ -739,13 +663,11 @@
 // </form>
 // <script>setTimeout(function(){ document.getElementById('f').submit(); }, 1500);</script>
 // </body></html>`);
-
 //     } catch (err: any) {
 //         console.error('/verify-otp error', err);
 //         return res.status(500).json({ error: err.message || 'Internal server error' });
 //     }
 // });
-
 // // ---------------------------------------------------------
 // // Admin: Login
 // // ---------------------------------------------------------
@@ -753,7 +675,6 @@
 //     const { username, password } = req.body;
 //     const validUser = process.env.ADMIN_USERNAME || 'admin';
 //     const validPass = process.env.ADMIN_PASSWORD || 'slt@wifi2025';
-
 //     if (username === validUser && password === validPass) {
 //         // Simple token — timestamp + secret. Good enough for internal admin tool.
 //         const token = Buffer.from(`${username}:${Date.now()}:${validPass}`).toString('base64');
@@ -761,7 +682,6 @@
 //     }
 //     return res.status(401).json({ success: false, error: 'Invalid username or password' });
 // });
-
 // // GET /admin/pfsense-poll
 // // Called by pfSense poller script every 30 seconds.
 // // Returns {clear:true} once after an event is adjourned.
@@ -773,7 +693,6 @@
 //     }
 //     return res.json({ clear: false });
 // });
-
 // // ==================================================================
 // // Admin: Create Event
 // // ==================================================================
@@ -792,7 +711,6 @@
 //         return res.status(201).json({ success: true, message: 'Event created successfully' });
 //     } catch { return res.status(500).json({ error: 'Internal server error' }); }
 // });
-
 // // ==================================================================
 // // Admin: Get Event Details
 // // ==================================================================
@@ -803,7 +721,6 @@
 //         return res.status(200).json(ev);
 //     } catch { return res.status(500).json({ error: 'Internal server error' }); }
 // });
-
 // // ==================================================================
 // // Admin: Adjourn Event
 // // ==================================================================
@@ -811,12 +728,10 @@
 //     try {
 //         const { eventId } = req.params;
 //         await EventModel.findOneAndUpdate({ eventId }, { status: 'adjourned' });
-        
 //         // Signal pfSense polling script to clear captive portal sessions
 //         pendingClearSignal = true;
 //         clearSignalTime    = Date.now();
 //         console.log('[ADJOURN] pfSense clear signal set');
-        
 //         const sessions = await SessionModel.find({ eventId, status: 'active' });
 //         await Promise.all(sessions.map(s => revokeMacOnPfSense(s.macAddress)));
 //         await SessionModel.updateMany({ eventId, status: 'active' }, { status: 'terminated_early' });
@@ -824,14 +739,12 @@
 //         return res.status(200).json({ success: true, message: `Adjourned. ${sessions.length} sessions terminated.` });
 //     } catch { return res.status(500).json({ error: 'Internal server error' }); }
 // });
-
 // // ---------------------------------------------------------
 // // Adjournment signal store (in-memory)
 // // pfSense mini PC polls this to know when to clear sessions
 // // ---------------------------------------------------------
 // let pendingClearSignal = false;
 // let clearSignalTime    = 0;
-
 // // GET /admin/pfsense-poll
 // // Called by the pfSense polling script every 30 seconds.
 // // Returns {clear: true} if an event was adjourned since last poll.
@@ -843,7 +756,6 @@
 //     }
 //     return res.json({ clear: false });
 // });
-
 // // ==================================================================
 // // Admin: Download CSV Report
 // // ==================================================================
@@ -859,7 +771,6 @@
 //         return res.send(header + rows);
 //     } catch { return res.status(500).json({ error: 'Internal server error' }); }
 // });
-
 // // ==================================================================
 // // Debug endpoint — check what's in cpStore for an IP
 // // Remove before production!
@@ -876,46 +787,26 @@
 //         all_stored_ips: allKeys
 //     });
 // });
-
 // const PORT = process.env.PORT || 8080;
 // app.listen(PORT, () => {
 //     console.log(`SLT Wi-Fi Auth API on port ${PORT}`);
 //     console.log(`pfSense: ${process.env.PFSENSE_HOST || '(mock)'}`);
 //     console.log(`SMS:     ${process.env.SLT_SMS_GATEWAY_URL || '(mock)'}`);
 // });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-import 'dotenv/config';
-import express, { Request, Response } from 'express';
-import mongoose from 'mongoose';
-import cors from 'cors';
-import crypto from 'crypto';
-
-import { authorizeMacOnPfSense, revokeMacOnPfSense } from './pfsense';
-import { sendOtpViaSlt } from './smsGateway';
-import { EventModel, OtpModel, SessionModel, AuditLogModel } from './models';
-
+require("dotenv/config");
+const express_1 = __importDefault(require("express"));
+const mongoose_1 = __importDefault(require("mongoose"));
+const cors_1 = __importDefault(require("cors"));
+const crypto_1 = __importDefault(require("crypto"));
+const pfsense_1 = require("./pfsense");
+const smsGateway_1 = require("./smsGateway");
+const models_1 = require("./models");
 const MONGODB_URI = process.env.MONGODB_URI ||
     'mongodb://dpd:digital%40456@192.168.100.111:3401/slt_wifi_portal?authSource=admin';
-
-mongoose.connect(MONGODB_URI)
+mongoose_1.default.connect(MONGODB_URI)
     .then(() => console.log('MongoDB connected!'))
     .catch(err => console.error('MongoDB connection failed:', err));
-
-const app = express();
-
+const app = (0, express_1.default)();
 // ---------------------------------------------------------
 // Adjournment signal store  (declared ONCE here)
 // pfSense mini PC polls /admin/pfsense-poll every 30 seconds.
@@ -923,98 +814,89 @@ const app = express();
 // The next poll consumes it and pfSense clears all CP sessions.
 // ---------------------------------------------------------
 let pendingClearSignal = false;
-let clearSignalTime    = 0;
-
-app.use(cors());
-app.use(express.json());
+let clearSignalTime = 0;
+app.use((0, cors_1.default)());
+app.use(express_1.default.json());
 app.set('trust proxy', true);
-
-// ------------------------------------------------------------------
-// cp_action store
-// ------------------------------------------------------------------
-interface CpEntry { action: string; storedAt: number; }
-const cpStore = new Map<string, CpEntry>();
-const CP_TTL  = 30 * 60 * 1000;
-
-function saveCp(ip: string, action: string) {
-    if (!action || action.includes('$')) return;
+const cpStore = new Map();
+const CP_TTL = 30 * 60 * 1000;
+function saveCp(ip, action) {
+    if (!action || action.includes('$'))
+        return;
     cpStore.set(ip, { action, storedAt: Date.now() });
     console.log(`[CP-STORE] saved for ${ip}`);
     const cutoff = Date.now() - CP_TTL;
-    cpStore.forEach((v, k) => { if (v.storedAt < cutoff) cpStore.delete(k); });
+    cpStore.forEach((v, k) => { if (v.storedAt < cutoff)
+        cpStore.delete(k); });
 }
-
-function loadCp(ip: string): string {
+function loadCp(ip) {
     const e = cpStore.get(ip);
-    if (!e) return '';
-    if (Date.now() - e.storedAt > CP_TTL) { cpStore.delete(ip); return ''; }
+    if (!e)
+        return '';
+    if (Date.now() - e.storedAt > CP_TTL) {
+        cpStore.delete(ip);
+        return '';
+    }
     return e.action;
 }
-
-const PIXEL = Buffer.from(
-    'R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==', 'base64'
-);
-
-function getClientIp(req: Request): string {
+const PIXEL = Buffer.from('R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==', 'base64');
+function getClientIp(req) {
     const fwd = req.headers['x-forwarded-for'];
-    if (typeof fwd === 'string') return fwd.split(',')[0].trim();
+    if (typeof fwd === 'string')
+        return fwd.split(',')[0].trim();
     return req.ip || req.socket.remoteAddress || 'unknown';
 }
-
 // ------------------------------------------------------------------
 // Seeder
 // ------------------------------------------------------------------
-async function seedDemoEvent() {
-    try {
-        if (!await EventModel.findOne({ eventId: 'demo123' })) {
-            await new EventModel({
-                eventId: 'demo123', name: 'SLT Mobitel Tech Expo', status: 'active',
-                branding: {
-                    logoUrl: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png',
-                    primaryColor: '#005c42', backgroundColor: '#f4f7f6', termsUrl: '#'
-                },
-                policies: { sessionDurationMinutes: 120 }
-            }).save();
-            console.log("Seeded 'demo123' event.");
+function seedDemoEvent() {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            if (!(yield models_1.EventModel.findOne({ eventId: 'demo123' }))) {
+                yield new models_1.EventModel({
+                    eventId: 'demo123', name: 'SLT Mobitel Tech Expo', status: 'active',
+                    branding: {
+                        logoUrl: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png',
+                        primaryColor: '#005c42', backgroundColor: '#f4f7f6', termsUrl: '#'
+                    },
+                    policies: { sessionDurationMinutes: 120 }
+                }).save();
+                console.log("Seeded 'demo123' event.");
+            }
         }
-    } catch (e) { console.error('Seed failed', e); }
+        catch (e) {
+            console.error('Seed failed', e);
+        }
+    });
 }
-mongoose.connection.once('open', seedDemoEvent);
-
+mongoose_1.default.connection.once('open', seedDemoEvent);
 // ==================================================================
 // GET /cp-ping
 // ==================================================================
-app.get('/cp-ping', (req: Request, res: Response) => {
-    const cp_action  = (req.query.cp_action  as string) || '';
-    const client_ip  = (req.query.client_ip  as string) || '';
-    const requestIp  = getClientIp(req);
-
+app.get('/cp-ping', (req, res) => {
+    const cp_action = req.query.cp_action || '';
+    const client_ip = req.query.client_ip || '';
+    const requestIp = getClientIp(req);
     saveCp(requestIp, cp_action);
-    if (client_ip) saveCp(client_ip, cp_action);
-
+    if (client_ip)
+        saveCp(client_ip, cp_action);
     console.log(`[CP-PING] requestIp=${requestIp} clientIp=${client_ip} hasAction=${!!cp_action && !cp_action.includes('$')}`);
-
     res.setHeader('Content-Type', 'image/gif');
     res.setHeader('Cache-Control', 'no-cache, no-store');
     res.send(PIXEL);
 });
-
 // ==================================================================
 // GET /landing
 // ==================================================================
-app.get('/landing', async (req: Request, res: Response): Promise<any> => {
+app.get('/landing', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const cp_action = (req.query.cp_action as string) || '';
-        const client_ip = (req.query.client_ip as string) || '';
+        const cp_action = req.query.cp_action || '';
+        const client_ip = req.query.client_ip || '';
         const requestIp = getClientIp(req);
-
         saveCp(requestIp, cp_action);
-        if (client_ip) saveCp(client_ip, cp_action);
-
-        const activeEvent = await EventModel.findOne(
-            { status: 'active' }, {}, { sort: { createdAt: -1 } }
-        );
-
+        if (client_ip)
+            saveCp(client_ip, cp_action);
+        const activeEvent = yield models_1.EventModel.findOne({ status: 'active' }, {}, { sort: { createdAt: -1 } });
         if (!activeEvent) {
             return res.send(`<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1027,23 +909,23 @@ h2{color:#005c42}p{color:#666;font-size:14px}</style></head>
 <p>There is no active event right now.<br>Please contact the event organizer.</p>
 </div></body></html>`);
         }
-
         const qs = new URLSearchParams();
-        if (cp_action && !cp_action.includes('$')) qs.set('cp_action', cp_action);
-        if (client_ip) qs.set('client_ip', client_ip);
+        if (cp_action && !cp_action.includes('$'))
+            qs.set('cp_action', cp_action);
+        if (client_ip)
+            qs.set('client_ip', client_ip);
         const q = qs.toString();
-
         return res.redirect(`/portal/${activeEvent.eventId}${q ? '?' + q : ''}`);
-    } catch (err) {
+    }
+    catch (err) {
         console.error('/landing error', err);
         return res.status(500).send('Server error. Please try again.');
     }
-});
-
+}));
 // ==================================================================
 // GET /portal/success
 // ==================================================================
-app.get('/portal/success', (_req: Request, res: Response) => {
+app.get('/portal/success', (_req, res) => {
     res.send(`<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Connected!</title>
@@ -1086,108 +968,96 @@ var t = setInterval(function(){
 </script>
 </body></html>`);
 });
-
 // ==================================================================
 // Mobile number normalizer — accepts 0XXXXXXXXX, XXXXXXXXX, +94XXXXXXXXX
 // Always stores as +94XXXXXXXXX
 // ==================================================================
-function normalizeMobile(raw: string): string | null {
+function normalizeMobile(raw) {
     const cleaned = raw.replace(/[\s\-\(\)]/g, '');
-    if (/^\+94[7][0-9]{8}$/.test(cleaned)) return cleaned;
-    if (/^07[0-9]{8}$/.test(cleaned))      return '+94' + cleaned.slice(1);
-    if (/^7[0-9]{8}$/.test(cleaned))       return '+94' + cleaned;
+    if (/^\+94[7][0-9]{8}$/.test(cleaned))
+        return cleaned;
+    if (/^07[0-9]{8}$/.test(cleaned))
+        return '+94' + cleaned.slice(1);
+    if (/^7[0-9]{8}$/.test(cleaned))
+        return '+94' + cleaned;
     return null;
 }
-
 // ==================================================================
 // POST /request-otp
 // ==================================================================
-app.post('/request-otp', async (req: Request, res: Response): Promise<any> => {
+app.post('/request-otp', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { mobile: rawMobile, eventId } = req.body;
         const mobile = normalizeMobile(rawMobile || '');
-        if (!mobile || !eventId) return res.status(400).json({ error: 'Invalid or missing mobile number. Use format: 0711234567 or 711234567' });
-
-        const ev = await EventModel.findOne({ eventId });
-        if (!ev)                    return res.status(404).json({ error: 'Event not found' });
-        if (ev.status !== 'active') return res.status(403).json({ error: 'Event is not active' });
-
-        const otp       = crypto.randomInt(100000, 999999).toString();
-        const expiresAt = new Date(Date.now() + 5 * 60_000);
-
-        await OtpModel.findOneAndUpdate(
-            { mobile, eventId },
-            { otp, expiresAt, attempts: 0 },
-            { upsert: true, new: true }
-        );
-        await sendOtpViaSlt(mobile, otp, ev.name);
-
+        if (!mobile || !eventId)
+            return res.status(400).json({ error: 'Invalid or missing mobile number. Use format: 0711234567 or 711234567' });
+        const ev = yield models_1.EventModel.findOne({ eventId });
+        if (!ev)
+            return res.status(404).json({ error: 'Event not found' });
+        if (ev.status !== 'active')
+            return res.status(403).json({ error: 'Event is not active' });
+        const otp = crypto_1.default.randomInt(100000, 999999).toString();
+        const expiresAt = new Date(Date.now() + 5 * 60000);
+        yield models_1.OtpModel.findOneAndUpdate({ mobile, eventId }, { otp, expiresAt, attempts: 0 }, { upsert: true, new: true });
+        yield (0, smsGateway_1.sendOtpViaSlt)(mobile, otp, ev.name);
         return res.status(200).json({ success: true, message: 'OTP sent successfully' });
-    } catch (err: any) {
+    }
+    catch (err) {
         console.error('/request-otp error', err);
         return res.status(500).json({ error: err.message || 'Internal server error' });
     }
-});
-
+}));
 // ==================================================================
 // POST /verify-otp
 // ==================================================================
-app.post('/verify-otp', async (req: Request, res: Response): Promise<any> => {
+app.post('/verify-otp', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     try {
         const { mobile: rawMobile, otp, eventId, macAddress, cp_action, client_ip } = req.body;
         const mobile = normalizeMobile(rawMobile || '') || rawMobile;
         if (!mobile || !otp || !eventId)
             return res.status(400).json({ error: 'Missing required fields' });
-
         const requestIp = getClientIp(req);
-        const mac       = macAddress || 'unknown';
-
-        const otpDoc = await OtpModel.findOne({ mobile, eventId });
-        if (!otpDoc) return res.status(401).json({ error: 'Invalid or expired OTP' });
-
+        const mac = macAddress || 'unknown';
+        const otpDoc = yield models_1.OtpModel.findOne({ mobile, eventId });
+        if (!otpDoc)
+            return res.status(401).json({ error: 'Invalid or expired OTP' });
         if (otp !== '123456' && otpDoc.otp !== otp) {
-            otpDoc.attempts += 1; await otpDoc.save();
+            otpDoc.attempts += 1;
+            yield otpDoc.save();
             return res.status(401).json({ error: 'Invalid OTP' });
         }
         if (otpDoc.expiresAt < new Date())
             return res.status(401).json({ error: 'OTP expired' });
-
-        const ev = await EventModel.findOne({ eventId });
-        if (!ev)                    return res.status(404).json({ error: 'Event not found' });
-        if (ev.status !== 'active') return res.status(403).json({ error: 'Event is not active' });
-
-        const sessionExpiresAt = ev.policies?.sessionDurationMinutes
-            ? new Date(Date.now() + ev.policies.sessionDurationMinutes * 60_000) : null;
-
-        const sessionRef = await new SessionModel({
+        const ev = yield models_1.EventModel.findOne({ eventId });
+        if (!ev)
+            return res.status(404).json({ error: 'Event not found' });
+        if (ev.status !== 'active')
+            return res.status(403).json({ error: 'Event is not active' });
+        const sessionExpiresAt = ((_a = ev.policies) === null || _a === void 0 ? void 0 : _a.sessionDurationMinutes)
+            ? new Date(Date.now() + ev.policies.sessionDurationMinutes * 60000) : null;
+        const sessionRef = yield new models_1.SessionModel({
             eventId, mobile, macAddress: mac, clientIp: requestIp,
             expiresAt: sessionExpiresAt, status: 'active', dataUsageMb: 0
         }).save();
-
-        await OtpModel.deleteOne({ _id: otpDoc._id });
-        await new AuditLogModel({ action: 'session_created', eventId, mobile, macAddress: mac, clientIp: requestIp }).save();
-
-        const clean = (s: string) => s && !s.includes('$') ? s.trim() : '';
-
+        yield models_1.OtpModel.deleteOne({ _id: otpDoc._id });
+        yield new models_1.AuditLogModel({ action: 'session_created', eventId, mobile, macAddress: mac, clientIp: requestIp }).save();
+        const clean = (s) => s && !s.includes('$') ? s.trim() : '';
         const PFSENSE_CP_URL = 'http://172.31.98.1:8002/index.php?zone=main_zone&redirurl=' +
             encodeURIComponent('http://124.43.216.136:45080/portal/success');
-
-        const effective =
-            clean(cp_action)                       ||
-            loadCp(requestIp)                      ||
-            (client_ip ? loadCp(client_ip) : '')   ||
+        const effective = clean(cp_action) ||
+            loadCp(requestIp) ||
+            (client_ip ? loadCp(client_ip) : '') ||
             PFSENSE_CP_URL;
-
         console.log(`[VERIFY-OTP] ip=${requestIp} source=` +
             (clean(cp_action) ? 'body' :
-             loadCp(requestIp) ? 'store-requestIp' :
-             (client_ip && loadCp(client_ip)) ? 'store-clientIp' : 'HARDCODED') +
+                loadCp(requestIp) ? 'store-requestIp' :
+                    (client_ip && loadCp(client_ip)) ? 'store-clientIp' : 'HARDCODED') +
             ` action=${effective.substring(0, 60)}`);
-
         cpStore.delete(requestIp);
-        if (client_ip) cpStore.delete(client_ip);
+        if (client_ip)
+            cpStore.delete(client_ip);
         console.log(`[CP-AUTH] posting form → ${effective.substring(0, 80)}`);
-
         return res.send(`<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Connecting...</title>
 <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
@@ -1213,34 +1083,31 @@ h2{color:#005c42;font-size:20px;margin:0 0 8px}p{color:#888;font-size:13px}
 </form>
 <script>setTimeout(function(){ document.getElementById('f').submit(); }, 1500);</script>
 </body></html>`);
-
-    } catch (err: any) {
+    }
+    catch (err) {
         console.error('/verify-otp error', err);
         return res.status(500).json({ error: err.message || 'Internal server error' });
     }
-});
-
+}));
 // ==================================================================
 // POST /admin/login
 // ==================================================================
-app.post('/admin/login', (req: Request, res: Response): any => {
+app.post('/admin/login', (req, res) => {
     const { username, password } = req.body;
     const validUser = process.env.ADMIN_USERNAME || 'admin';
     const validPass = process.env.ADMIN_PASSWORD || 'slt@wifi2025';
-
     if (username === validUser && password === validPass) {
         const token = Buffer.from(`${username}:${Date.now()}:${validPass}`).toString('base64');
         return res.status(200).json({ success: true, token });
     }
     return res.status(401).json({ success: false, error: 'Invalid username or password' });
 });
-
 // ==================================================================
 // GET /admin/pfsense-poll   (declared ONCE here)
 // Called by pfSense poller script every 30 seconds.
 // Returns {clear:true} once after an event is adjourned.
 // ==================================================================
-app.get('/admin/pfsense-poll', (_req: Request, res: Response) => {
+app.get('/admin/pfsense-poll', (_req, res) => {
     if (pendingClearSignal) {
         pendingClearSignal = false;
         console.log('[PFSENSE-POLL] Sending clear signal to pfSense');
@@ -1248,106 +1115,107 @@ app.get('/admin/pfsense-poll', (_req: Request, res: Response) => {
     }
     return res.json({ clear: false });
 });
-
 // GET /api/admin/pfsense-event-policy
 // Called by pfSense poller every 60 seconds to check session limits.
 // Returns the active event's session duration so the poller can
 // disconnect clients whose sessions have expired.
-app.get('/admin/pfsense-event-policy', async (_req: Request, res: Response) => {
+app.get('/admin/pfsense-event-policy', (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     try {
-        const activeEvent = await EventModel.findOne(
-            { status: 'active' }, {}, { sort: { createdAt: -1 } }
-        );
-        if (!activeEvent || !activeEvent.policies?.sessionDurationMinutes) {
+        const activeEvent = yield models_1.EventModel.findOne({ status: 'active' }, {}, { sort: { createdAt: -1 } });
+        if (!activeEvent || !((_a = activeEvent.policies) === null || _a === void 0 ? void 0 : _a.sessionDurationMinutes)) {
             return res.json({ sessionDurationMinutes: 0 });
         }
         return res.json({
             sessionDurationMinutes: activeEvent.policies.sessionDurationMinutes
         });
-    } catch {
+    }
+    catch (_b) {
         return res.json({ sessionDurationMinutes: 0 });
     }
-});
-
+}));
 // ==================================================================
 // POST /admin/events  — Create Event
 // ==================================================================
-app.post('/admin/events', async (req: Request, res: Response): Promise<any> => {
+app.post('/admin/events', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { eventId, name, branding, policies } = req.body;
-        if (!eventId || !name) return res.status(400).json({ error: 'Missing eventId or name' });
-        await EventModel.findOneAndUpdate(
-            { eventId },
-            { name, status: 'active',
-              branding: branding || {
-                  logoUrl: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png',
-                  primaryColor: '#005c42', backgroundColor: '#f4f7f6', termsUrl: '#'
-              },
-              policies },
-            { upsert: true, new: true }
-        );
+        if (!eventId || !name)
+            return res.status(400).json({ error: 'Missing eventId or name' });
+        yield models_1.EventModel.findOneAndUpdate({ eventId }, { name, status: 'active',
+            branding: branding || {
+                logoUrl: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Mobitel_Logo_2020.png',
+                primaryColor: '#005c42', backgroundColor: '#f4f7f6', termsUrl: '#'
+            },
+            policies }, { upsert: true, new: true });
         return res.status(201).json({ success: true, message: 'Event created successfully' });
-    } catch { return res.status(500).json({ error: 'Internal server error' }); }
-});
-
+    }
+    catch (_a) {
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+}));
 // ==================================================================
 // GET /events/:eventId  — Get Event Details
 // ==================================================================
-app.get('/events/:eventId', async (req: Request, res: Response): Promise<any> => {
+app.get('/events/:eventId', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const ev = await EventModel.findOne({ eventId: req.params.eventId });
-        if (!ev) return res.status(404).json({ error: 'Event not found' });
+        const ev = yield models_1.EventModel.findOne({ eventId: req.params.eventId });
+        if (!ev)
+            return res.status(404).json({ error: 'Event not found' });
         return res.status(200).json(ev);
-    } catch { return res.status(500).json({ error: 'Internal server error' }); }
-});
-
+    }
+    catch (_a) {
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+}));
 // ==================================================================
 // POST /admin/events/:eventId/adjourn  — Adjourn Event
 // Also sets pendingClearSignal so pfSense poller clears sessions.
 // ==================================================================
-app.post('/admin/events/:eventId/adjourn', async (req: Request, res: Response): Promise<any> => {
+app.post('/admin/events/:eventId/adjourn', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { eventId } = req.params;
-        await EventModel.findOneAndUpdate({ eventId }, { status: 'adjourned' });
-
+        yield models_1.EventModel.findOneAndUpdate({ eventId }, { status: 'adjourned' });
         // Signal pfSense polling script to clear captive portal sessions
         pendingClearSignal = true;
-        clearSignalTime    = Date.now();
+        clearSignalTime = Date.now();
         console.log('[ADJOURN] pfSense clear signal set');
-
-        const sessions = await SessionModel.find({ eventId, status: 'active' });
-        await Promise.all(sessions.map(s => revokeMacOnPfSense(s.macAddress)));
-        await SessionModel.updateMany({ eventId, status: 'active' }, { status: 'terminated_early' });
-        await new AuditLogModel({
+        const sessions = yield models_1.SessionModel.find({ eventId, status: 'active' });
+        yield Promise.all(sessions.map(s => (0, pfsense_1.revokeMacOnPfSense)(s.macAddress)));
+        yield models_1.SessionModel.updateMany({ eventId, status: 'active' }, { status: 'terminated_early' });
+        yield new models_1.AuditLogModel({
             action: 'event_adjourned', eventId, sessionsTerminated: sessions.length
         }).save();
         return res.status(200).json({
             success: true,
             message: `Adjourned. ${sessions.length} sessions terminated.`
         });
-    } catch { return res.status(500).json({ error: 'Internal server error' }); }
-});
-
+    }
+    catch (_a) {
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+}));
 // ==================================================================
 // GET /admin/events/:eventId/report  — Download CSV
 // ==================================================================
-app.get('/admin/events/:eventId/report', async (req: Request, res: Response): Promise<any> => {
+app.get('/admin/events/:eventId/report', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const sessions = await SessionModel.find({ eventId: req.params.eventId });
-        const header   = 'Mobile,MAC Address,Client IP,Start Time,Expiry Time,Status,Data Usage (MB)\n';
-        const rows     = sessions.map(s =>
-            `${s.mobile},${s.macAddress},${s.clientIp||'N/A'},` +
-            `${s.startTime?.toISOString()||'N/A'},${s.expiresAt?.toISOString()||'N/A'},` +
-            `${s.status},${s.dataUsageMb||0}`
-        ).join('\n');
+        const sessions = yield models_1.SessionModel.find({ eventId: req.params.eventId });
+        const header = 'Mobile,MAC Address,Client IP,Start Time,Expiry Time,Status,Data Usage (MB)\n';
+        const rows = sessions.map(s => {
+            var _a, _b;
+            return `${s.mobile},${s.macAddress},${s.clientIp || 'N/A'},` +
+                `${((_a = s.startTime) === null || _a === void 0 ? void 0 : _a.toISOString()) || 'N/A'},${((_b = s.expiresAt) === null || _b === void 0 ? void 0 : _b.toISOString()) || 'N/A'},` +
+                `${s.status},${s.dataUsageMb || 0}`;
+        }).join('\n');
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename=report_${req.params.eventId}.csv`);
         return res.send(header + rows);
-    } catch { return res.status(500).json({ error: 'Internal server error' }); }
-});
-
-
-
+    }
+    catch (_a) {
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+}));
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
     console.log(`SLT Wi-Fi Auth API on port ${PORT}`);

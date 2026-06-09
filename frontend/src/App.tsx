@@ -369,7 +369,8 @@ const EventPortal = () => {
 
     const handleRequestOtp = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (mobile.length !== 9) { setErrorMsg('Please enter a valid 9-digit mobile number.'); return; }
+        const normalizedMobile = mobile.startsWith('0') ? mobile.slice(1) : mobile;
+        if (normalizedMobile.length !== 9 || !/^[0-9]{9}$/.test(normalizedMobile)) { setErrorMsg('Please enter a valid Sri Lankan mobile number (e.g. 0711234567 or 711234567).'); return; }
         setIsLoading(true);
         try {
             await api.requestOtp(mobile, eventId as string);
@@ -457,10 +458,14 @@ const EventPortal = () => {
                                         type="tel"
                                         required
                                         pattern="[0-9]{9}"
-                                        placeholder="771234567"
+                                        placeholder="711234567"
                                         className="w-full pl-3 pr-4 py-3 rounded-r-xl outline-none text-gray-800 placeholder-gray-400 font-medium"
                                         value={mobile}
-                                        onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
+                                        onChange={(e) => {
+                                            let val = e.target.value.replace(/\D/g, '');
+                                            if (val.startsWith('0')) val = val.slice(1);
+                                            if (val.length <= 9) setMobile(val);
+                                        }}
                                         disabled={isLoading}
                                     />
                                 </div>

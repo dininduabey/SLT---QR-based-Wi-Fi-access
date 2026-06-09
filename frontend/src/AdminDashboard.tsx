@@ -16,8 +16,6 @@ interface EventData {
         termsUrl: string;
     };
     policies?: {
-        bandwidthMbps: number;
-        dataLimitMb: number;
         sessionDurationMinutes: number;
     } | null;
 }
@@ -46,7 +44,8 @@ export default function AdminDashboard() {
                     </div>
                     <div className="flex items-center gap-2 text-xs">
                         <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full font-medium">● Backend Connected</span>
-                        <span className="px-2 py-1 bg-amber-50 text-amber-700 rounded-full font-medium">pfSense: Mock Mode</span>
+                        <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full font-medium">● pfSense: Connected</span>
+                        <span className="px-2 py-1 bg-amber-50 text-amber-700 rounded-full font-medium">⚠ SMS: Mock Mode</span>
                     </div>
                 </div>
             </header>
@@ -85,8 +84,6 @@ function CreateEventTab() {
     const [eventId, setEventId] = useState('');
     const [eventName, setEventName] = useState('');
     const [sessionDuration, setSessionDuration] = useState(120);
-    const [bandwidthMbps, setBandwidthMbps] = useState(10);
-    const [dataLimitMb, setDataLimitMb] = useState(500);
     const [status, setStatus] = useState<{ type: 'success' | 'error' | ''; message: string }>({ type: '', message: '' });
     const [isRegistering, setIsRegistering] = useState(false);
     const [hasLimits, setHasLimits] = useState(true);
@@ -125,8 +122,6 @@ function CreateEventTab() {
                         termsUrl: "#"
                     },
                     policies: hasLimits ? {
-                        bandwidthMbps,
-                        dataLimitMb,
                         sessionDurationMinutes: sessionDuration,
                     } : null
                 })
@@ -209,22 +204,13 @@ function CreateEventTab() {
                             Set Access Limits
                         </label>
                     </div>
-                    <div className={`grid grid-cols-3 gap-4 transition-opacity ${hasLimits ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                    <div className={`grid grid-cols-1 gap-4 transition-opacity ${hasLimits ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
                         <div>
                             <label className="block text-xs font-semibold text-slate-600 mb-1.5">Session Duration (min)</label>
                             <input type="number" value={sessionDuration} onChange={e => setSessionDuration(Number(e.target.value))} disabled={!hasLimits}
                                 className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm disabled:bg-slate-50" />
                         </div>
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Bandwidth (Mbps)</label>
-                            <input type="number" value={bandwidthMbps} onChange={e => setBandwidthMbps(Number(e.target.value))} disabled={!hasLimits}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm disabled:bg-slate-50" />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Data Limit (MB)</label>
-                            <input type="number" value={dataLimitMb} onChange={e => setDataLimitMb(Number(e.target.value))} disabled={!hasLimits}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm disabled:bg-slate-50" />
-                        </div>
+
                     </div>
                 </div>
 
@@ -375,18 +361,10 @@ function ManageEventsTab() {
                     </div>
 
                     {/* Policies */}
-                    <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="grid grid-cols-1 gap-4 mb-6">
                         <div className="bg-slate-50 rounded-xl p-4 text-center">
                             <p className="text-2xl font-bold text-slate-800">{event.policies?.sessionDurationMinutes || '∞'}</p>
-                            <p className="text-xs text-slate-500 font-medium">{event.policies?.sessionDurationMinutes ? 'Minutes / Session' : 'Unlimited Duration'}</p>
-                        </div>
-                        <div className="bg-slate-50 rounded-xl p-4 text-center">
-                            <p className="text-2xl font-bold text-slate-800">{event.policies?.bandwidthMbps || '∞'}</p>
-                            <p className="text-xs text-slate-500 font-medium">{event.policies?.bandwidthMbps ? 'Mbps / User' : 'Unlimited Bandwidth'}</p>
-                        </div>
-                        <div className="bg-slate-50 rounded-xl p-4 text-center">
-                            <p className="text-2xl font-bold text-slate-800">{event.policies?.dataLimitMb || '∞'}</p>
-                            <p className="text-xs text-slate-500 font-medium">{event.policies?.dataLimitMb ? 'MB Data Limit' : 'Unlimited Data'}</p>
+                            <p className="text-xs text-slate-500 font-medium">{event.policies?.sessionDurationMinutes ? 'Minutes / Session' : 'No Time Limit'}</p>
                         </div>
                     </div>
 
@@ -412,8 +390,8 @@ function ManageEventsTab() {
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
                 <h3 className="font-bold text-amber-800 text-sm mb-2">⚠️ Development Mode Notice</h3>
                 <ul className="text-amber-700 text-sm space-y-1 list-disc list-inside">
-                    <li><strong>pfSense:</strong> Running in mock mode. Set <code className="bg-amber-100 px-1 rounded">PFSENSE_HOST</code> in <code className="bg-amber-100 px-1 rounded">.env</code> to connect to your real firewall.</li>
-                    <li><strong>SMS Gateway:</strong> OTPs are logged to the backend terminal. Set <code className="bg-amber-100 px-1 rounded">SLT_SMS_GATEWAY_URL</code> to send real SMS.</li>
+                    <li><strong>pfSense:</strong> Connected and enforcing session limits via poller.</li>
+                    <li><strong>SMS Gateway:</strong> Running in mock mode — OTPs are logged to the backend terminal. Set <code className="bg-amber-100 px-1 rounded">SLT_SMS_GATEWAY_URL</code> in <code className="bg-amber-100 px-1 rounded">.env</code> to send real SMS.</li>
                     <li><strong>Test OTP:</strong> Use <code className="bg-amber-100 px-1 rounded font-bold">123456</code> as a bypass OTP for testing.</li>
                 </ul>
             </div>
