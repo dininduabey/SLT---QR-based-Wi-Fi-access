@@ -904,6 +904,7 @@ import crypto from 'crypto';
 import { authorizeMacOnPfSense, revokeMacOnPfSense } from './pfsense';
 import { sendOtpViaSlt } from './smsGateway';
 import { EventModel, OtpModel, SessionModel, AuditLogModel, CustomerPhoneBookModel } from './models';
+import rateLimit from 'express-rate-limit';
 
 const MONGODB_URI = process.env.MONGODB_URI ||
     'mongodb://dpd:digital%40456@192.168.100.111:3401/slt_wifi_portal?authSource=admin';
