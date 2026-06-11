@@ -15,6 +15,7 @@ export interface IEvent extends Document {
     };
     policies: {
         sessionDurationMinutes: number;
+        qrRefreshMinutes?: number;
     } | null;
     createdAt: Date;
     updatedAt: Date;
@@ -33,6 +34,7 @@ const EventSchema = new Schema({
     policies: {
         type: {
             sessionDurationMinutes: Number,
+        qrRefreshMinutes:       Number,
         },
         default: null
     }

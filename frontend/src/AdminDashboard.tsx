@@ -86,7 +86,11 @@ function CreateEventTab() {
     const [sessionDuration, setSessionDuration] = useState(120);
     const [status, setStatus] = useState<{ type: 'success' | 'error' | ''; message: string }>({ type: '', message: '' });
     const [isRegistering, setIsRegistering] = useState(false);
-    const [hasLimits, setHasLimits] = useState(true);
+    const [hasLimits, setHasLimits]             = useState(true);
+    const [qrRefreshMinutes, setQrRefreshMinutes] = useState(0);
+    const [qrToken, setQrToken]                   = useState('');
+    const [qrExpiresAt, setQrExpiresAt]           = useState(0);
+    const [timeLeft, setTimeLeft]                 = useState(0);
 
     // Portal Base URL: This is the address users will reach when scanning the QR.
     // In PRODUCTION: Set this to the pfSense walled garden server (e.g., https://wifi.slt.lk)
@@ -100,6 +104,7 @@ function CreateEventTab() {
     });
 
     const portalUrl = `${portalBaseUrl}/portal/${eventId}`;
+    const qrUrl     = qrToken && qrRefreshMinutes > 0 ? `${portalUrl}?t=${qrToken}` : portalUrl;
 
     const handleRegisterEvent = async () => {
         if (!eventId.trim() || !eventName.trim()) {
@@ -121,14 +126,16 @@ function CreateEventTab() {
                         backgroundColor: "#f4f7f6",
                         termsUrl: "#"
                     },
-                    policies: hasLimits ? {
-                        sessionDurationMinutes: sessionDuration,
+                    policies: hasLimits || qrRefreshMinutes > 0 ? {
+                        ...(hasLimits ? { sessionDurationMinutes: sessionDuration } : {}),
+                        ...(qrRefreshMinutes > 0 ? { qrRefreshMinutes } : {}),
                     } : null
                 })
             });
             const data = await res.json();
             if (res.ok) {
                 setStatus({ type: 'success', message: `Event "${eventName}" created! QR code is ready below.` });
+                if (qrRefreshMinutes > 0) { fetchQrToken(eventId.trim()); }
             } else {
                 throw new Error(data.error || 'Failed to register event');
             }
@@ -138,6 +145,27 @@ function CreateEventTab() {
             setIsRegistering(false);
         }
     };
+
+    const fetchQrToken = async (evId: string) => {
+        try {
+            const res  = await fetch(`${API_URL}/qr-token/${evId}`);
+            if (!res.ok) return;
+            const data = await res.json();
+            setQrToken(data.token);
+            setQrExpiresAt(data.expiresAt);
+            setTimeLeft(Math.floor((data.expiresAt - Date.now()) / 1000));
+        } catch {}
+    };
+
+    useEffect(() => {
+        if (!qrExpiresAt) return;
+        const iv = setInterval(() => {
+            const rem = Math.floor((qrExpiresAt - Date.now()) / 1000);
+            if (rem <= 0) { if (eventId) fetchQrToken(eventId); }
+            else { setTimeLeft(rem); }
+        }, 1000);
+        return () => clearInterval(iv);
+    }, [qrExpiresAt, eventId]);
 
     const handleDownloadQr = () => {
         const svg = document.getElementById('qr-code-svg');
@@ -217,7 +245,20 @@ function CreateEventTab() {
 
                 {/* Actions */}
                 <div className="mt-6 flex items-center gap-3">
-                    <button onClick={handleRegisterEvent} disabled={isRegistering}
+                    {/* QR Refresh Interval */}
+                <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">QR Code Refresh Interval</label>
+                    <select value={qrRefreshMinutes} onChange={e => setQrRefreshMinutes(Number(e.target.value))}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm bg-white">
+                        <option value={0}>No refresh — static QR</option>
+                        <option value={10}>Every 10 minutes</option>
+                        <option value={15}>Every 15 minutes</option>
+                        <option value={20}>Every 20 minutes</option>
+                    </select>
+                    {qrRefreshMinutes > 0 && <p className="text-xs text-slate-400 mt-1">QR will expire and auto-regenerate every {qrRefreshMinutes} min</p>}
+                </div>
+
+                <button onClick={handleRegisterEvent} disabled={isRegistering}
                         className="px-6 py-2.5 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition shadow-sm disabled:opacity-60">
                         {isRegistering ? 'Creating...' : 'Create Event & Generate QR'}
                     </button>
@@ -237,18 +278,36 @@ function CreateEventTab() {
                         <div className="bg-white p-3 rounded-xl shadow-md border border-slate-100 mb-4">
                             <QRCodeSVG
                                 id="qr-code-svg"
-                                value={portalUrl}
+                                value={qrUrl}
                                 size={220}
                                 level={"H"}
                                 includeMargin={true}
                             />
                         </div>
                         <p className="text-xs text-slate-500 mb-1 font-medium">Portal URL:</p>
-                        <a href={portalUrl} target="_blank" className="text-xs text-emerald-600 hover:underline break-all text-center mb-4">{portalUrl}</a>
+                        <a href={qrUrl} target="_blank" className="text-xs text-emerald-600 hover:underline break-all text-center mb-4">{qrUrl}</a>
                         <button onClick={handleDownloadQr}
                             className="px-5 py-2 bg-slate-800 text-white rounded-lg text-sm font-semibold hover:bg-slate-900 transition shadow-sm">
                             ⬇ Download QR (PNG)
                         </button>
+
+                        {qrRefreshMinutes > 0 && qrToken && (
+                            <div className={`mt-3 px-6 py-2 rounded-xl font-mono text-lg font-bold text-center transition-all ${
+                                timeLeft > 180 ? 'bg-emerald-50 text-emerald-600' :
+                                timeLeft > 90  ? 'bg-amber-50 text-amber-600' :
+                                                 'bg-red-50 text-red-600'
+                            }`}>
+                                {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
+                                <span className="block text-xs font-normal mt-0.5 opacity-60">until QR refresh</span>
+                            </div>
+                        )}
+
+                        {qrRefreshMinutes > 0 && eventId && (
+                            <a href={`/qr-display/${eventId}`} target="_blank" rel="noreferrer"
+                                className="mt-2 px-5 py-2 bg-emerald-700 text-white rounded-lg text-sm font-semibold hover:bg-emerald-800 transition text-center">
+                                🖥 Open Display Screen
+                            </a>
+                        )}
                     </>
                 ) : (
                     <div className="text-center text-slate-400">

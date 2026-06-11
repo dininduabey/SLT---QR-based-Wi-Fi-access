@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useParams, useSearchParams } from 'react-router-dom';
 import AdminDashboard from './AdminDashboard';
+import { QRCodeSVG } from 'qrcode.react';
 
 const API_URL = '/api';
 
@@ -13,11 +14,11 @@ const api = {
         if (!res.ok) throw new Error('Event not found');
         return await res.json();
     },
-    requestOtp: async (mobile: string, eventId: string) => {
+    requestOtp: async (mobile: string, eventId: string, qrToken?: string) => {
         const res = await fetch(`${API_URL}/request-otp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mobile, eventId })
+            body: JSON.stringify({ mobile, eventId, ...(qrToken ? { qrToken } : {}) })
         });
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
@@ -51,6 +52,83 @@ const api = {
         if (!res.ok || !data.success) throw new Error(data.error || 'Invalid credentials');
         return data;
     }
+};
+
+// ---------------------------------------------------------
+// QrDisplayPage — full-screen QR for projector / display screen
+// ---------------------------------------------------------
+const QrDisplayPage = () => {
+    const { eventId } = useParams();
+    const [qrData, setQrData]       = useState<{ token: string; expiresAt: number; validMinutes: number } | null>(null);
+    const [timeLeft, setTimeLeft]   = useState(0);
+    const [eventName, setEventName] = useState('');
+    const [error, setError]         = useState('');
+
+    const fetchToken = async () => {
+        try {
+            const res = await fetch(`/api/qr-token/${eventId}`);
+            if (!res.ok) { setError('Event not found or not active'); return; }
+            const data = await res.json();
+            setQrData(data);
+            setTimeLeft(Math.floor((data.expiresAt - Date.now()) / 1000));
+        } catch { setError('Failed to connect to server'); }
+    };
+
+    useEffect(() => {
+        fetchToken();
+        fetch(`/api/events/${eventId}`).then(r => r.json()).then(d => setEventName(d.name || '')).catch(() => {});
+    }, [eventId]);
+
+    useEffect(() => {
+        if (!qrData) return;
+        const iv = setInterval(() => {
+            const rem = Math.floor((qrData.expiresAt - Date.now()) / 1000);
+            if (rem <= 0) { fetchToken(); } else { setTimeLeft(rem); }
+        }, 1000);
+        return () => clearInterval(iv);
+    }, [qrData]);
+
+    const mins = Math.floor(timeLeft / 60);
+    const secs = String(timeLeft % 60).padStart(2, '0');
+    const timerColor = timeLeft > 180 ? '#10b981' : timeLeft > 90 ? '#f59e0b' : '#ef4444';
+    const timerBg    = timeLeft > 180 ? '#ecfdf5' : timeLeft > 90 ? '#fffbeb' : '#fef2f2';
+    const qrUrl = qrData ? `${window.location.origin}/portal/${eventId}?t=${qrData.token}` : '';
+
+    if (error) return (
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', background:'#0f172a' }}>
+            <p style={{ color:'#ef4444', fontSize:'20px' }}>{error}</p>
+        </div>
+    );
+
+    return (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+            minHeight:'100vh', background:'#0f172a', color:'white', fontFamily:'sans-serif', padding:'2rem' }}>
+            <p style={{ fontSize:'13px', color:'#64748b', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:'4px' }}>
+                {eventId}
+            </p>
+            <h1 style={{ fontSize:'26px', fontWeight:700, marginBottom:'2rem' }}>{eventName || 'SLT Wi-Fi Access'}</h1>
+
+            {qrData ? (
+                <>
+                    <div style={{ background:'white', padding:'20px', borderRadius:'16px', marginBottom:'1.5rem', boxShadow:'0 0 60px rgba(255,255,255,0.08)' }}>
+                        <QRCodeSVG value={qrUrl} size={280} level="H" includeMargin={false} />
+                    </div>
+                    <div style={{ background:timerBg, color:timerColor, padding:'12px 36px',
+                        borderRadius:'12px', fontSize:'32px', fontWeight:700, fontFamily:'monospace',
+                        marginBottom:'0.75rem', transition:'background 0.5s, color 0.5s' }}>
+                        {mins}:{secs}
+                    </div>
+                    <p style={{ color:'#475569', fontSize:'13px' }}>QR code refreshes automatically</p>
+                </>
+            ) : (
+                <p style={{ color:'#475569' }}>Loading...</p>
+            )}
+
+            <p style={{ marginTop:'2.5rem', color:'#1e3a5f', fontSize:'13px', fontWeight:600, textAlign:'center' }}>
+                Connect to SLT WiFi → Scan QR → Enter your mobile number
+            </p>
+        </div>
+    );
 };
 
 // ---------------------------------------------------------
@@ -348,6 +426,7 @@ const EventPortal = () => {
 
     const macAddress = searchParams.get('mac') || 'unknown';
     const cpAction   = searchParams.get('cp_action') || '';
+    const qrToken    = searchParams.get('t') || undefined;
 
     const [eventDetails, setEventDetails] = useState<any>(null);
     const [mobile, setMobile]             = useState('');
@@ -373,7 +452,7 @@ const EventPortal = () => {
         if (normalizedMobile.length !== 9 || !/^[0-9]{9}$/.test(normalizedMobile)) { setErrorMsg('Please enter a valid Sri Lankan mobile number (e.g. 0711234567 or 711234567).'); return; }
         setIsLoading(true);
         try {
-            await api.requestOtp(mobile, eventId as string);
+            await api.requestOtp(mobile, eventId as string, qrToken);
             setStep('OTP');
             setErrorMsg('');
         } catch (error: any) {
@@ -557,6 +636,7 @@ export default function App() {
             <Routes>
                 <Route path="/portal/success" element={<SuccessPage />} />
                 <Route path="/portal/:eventId" element={<EventPortal />} />
+                <Route path="/qr-display/:eventId" element={<QrDisplayPage />} />
                 <Route path="/"               element={<ProtectedAdmin />} />
             </Routes>
         </Router>

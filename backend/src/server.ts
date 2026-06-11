@@ -1100,15 +1100,48 @@ function normalizeMobile(raw: string): string | null {
 // ==================================================================
 // POST /request-otp
 // ==================================================================
+// ==================================================================
+// QR Token — generate / validate time-limited HMAC-signed tokens
+// ==================================================================
+const QR_SECRET = process.env.QR_TOKEN_SECRET || 'slt-qr-secret-2026';
+
+function generateQrToken(evId: string, validMinutes: number): string {
+    const expiresAt = Date.now() + validMinutes * 60_000;
+    const payload   = `${evId}:${expiresAt}`;
+    const sig       = crypto.createHmac('sha256', QR_SECRET).update(payload).digest('hex').slice(0, 12);
+    return Buffer.from(`${payload}:${sig}`).toString('base64url');
+}
+
+function validateQrToken(token: string, evId: string): boolean {
+    try {
+        const decoded = Buffer.from(token, 'base64url').toString();
+        const parts   = decoded.split(':');
+        if (parts.length !== 3) return false;
+        const [tEvId, expiresAt, sig] = parts;
+        if (tEvId !== evId) return false;
+        if (Date.now() > parseInt(expiresAt)) return false;
+        const expected = crypto.createHmac('sha256', QR_SECRET)
+            .update(`${tEvId}:${expiresAt}`).digest('hex').slice(0, 12);
+        return sig === expected;
+    } catch { return false; }
+}
+
 app.post('/request-otp', async (req: Request, res: Response): Promise<any> => {
     try {
-        const { mobile: rawMobile, eventId } = req.body;
+        const { mobile: rawMobile, eventId, qrToken } = req.body;
         const mobile = normalizeMobile(rawMobile || '');
         if (!mobile || !eventId) return res.status(400).json({ error: 'Invalid or missing mobile number. Use format: 0711234567 or 711234567' });
 
         const ev = await EventModel.findOne({ eventId });
         if (!ev)                    return res.status(404).json({ error: 'Event not found' });
         if (ev.status !== 'active') return res.status(403).json({ error: 'Event is not active' });
+
+        // Validate QR token if event uses refresh and token was provided
+        if (ev.policies?.qrRefreshMinutes && qrToken) {
+            if (!validateQrToken(qrToken, eventId)) {
+                return res.status(401).json({ error: 'QR code has expired. Please scan the latest QR code at the venue.' });
+            }
+        }
 
         const otp       = crypto.randomInt(100000, 999999).toString();
         const expiresAt = new Date(Date.now() + 5 * 60_000);
@@ -1362,6 +1395,21 @@ app.get('/admin/events/:eventId/report', async (req: Request, res: Response): Pr
 
 
 // ==================================================================
+// ==================================================================
+// GET /qr-token/:eventId — time-limited QR token for an active event
+// ==================================================================
+app.get('/qr-token/:eventId', async (req: Request, res: Response): Promise<any> => {
+    try {
+        const ev = await EventModel.findOne({ eventId: req.params.eventId, status: 'active' });
+        if (!ev) return res.status(404).json({ error: 'Event not found or not active' });
+        const validMinutes = ev.policies?.qrRefreshMinutes || 10;
+        const token        = generateQrToken(req.params.eventId, validMinutes);
+        return res.json({ token, expiresAt: Date.now() + validMinutes * 60_000, validMinutes });
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
 // GET /admin/phone-book — All collected numbers, optional ?eventId= filter
 // ==================================================================
 app.get('/admin/phone-book', async (req: Request, res: Response): Promise<any> => {

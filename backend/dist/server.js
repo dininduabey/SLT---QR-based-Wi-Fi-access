@@ -983,9 +983,39 @@ function normalizeMobile(raw) {
 // ==================================================================
 // POST /request-otp
 // ==================================================================
-app.post('/request-otp', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+// ==================================================================
+// QR Token — generate / validate time-limited HMAC-signed tokens
+// ==================================================================
+const QR_SECRET = process.env.QR_TOKEN_SECRET || 'slt-qr-secret-2026';
+function generateQrToken(evId, validMinutes) {
+    const expiresAt = Date.now() + validMinutes * 60000;
+    const payload = `${evId}:${expiresAt}`;
+    const sig = crypto_1.default.createHmac('sha256', QR_SECRET).update(payload).digest('hex').slice(0, 12);
+    return Buffer.from(`${payload}:${sig}`).toString('base64url');
+}
+function validateQrToken(token, evId) {
     try {
-        const { mobile: rawMobile, eventId } = req.body;
+        const decoded = Buffer.from(token, 'base64url').toString();
+        const parts = decoded.split(':');
+        if (parts.length !== 3)
+            return false;
+        const [tEvId, expiresAt, sig] = parts;
+        if (tEvId !== evId)
+            return false;
+        if (Date.now() > parseInt(expiresAt))
+            return false;
+        const expected = crypto_1.default.createHmac('sha256', QR_SECRET)
+            .update(`${tEvId}:${expiresAt}`).digest('hex').slice(0, 12);
+        return sig === expected;
+    }
+    catch (_a) {
+        return false;
+    }
+}
+app.post('/request-otp', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const { mobile: rawMobile, eventId, qrToken } = req.body;
         const mobile = normalizeMobile(rawMobile || '');
         if (!mobile || !eventId)
             return res.status(400).json({ error: 'Invalid or missing mobile number. Use format: 0711234567 or 711234567' });
@@ -994,6 +1024,12 @@ app.post('/request-otp', (req, res) => __awaiter(void 0, void 0, void 0, functio
             return res.status(404).json({ error: 'Event not found' });
         if (ev.status !== 'active')
             return res.status(403).json({ error: 'Event is not active' });
+        // Validate QR token if event uses refresh and token was provided
+        if (((_a = ev.policies) === null || _a === void 0 ? void 0 : _a.qrRefreshMinutes) && qrToken) {
+            if (!validateQrToken(qrToken, eventId)) {
+                return res.status(401).json({ error: 'QR code has expired. Please scan the latest QR code at the venue.' });
+            }
+        }
         const otp = crypto_1.default.randomInt(100000, 999999).toString();
         const expiresAt = new Date(Date.now() + 5 * 60000);
         yield models_1.OtpModel.findOneAndUpdate({ mobile, eventId }, { otp, expiresAt, attempts: 0 }, { upsert: true, new: true });
@@ -1223,6 +1259,23 @@ app.get('/admin/events/:eventId/report', (req, res) => __awaiter(void 0, void 0,
     }
 }));
 // ==================================================================
+// ==================================================================
+// GET /qr-token/:eventId — time-limited QR token for an active event
+// ==================================================================
+app.get('/qr-token/:eventId', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const ev = yield models_1.EventModel.findOne({ eventId: req.params.eventId, status: 'active' });
+        if (!ev)
+            return res.status(404).json({ error: 'Event not found or not active' });
+        const validMinutes = ((_a = ev.policies) === null || _a === void 0 ? void 0 : _a.qrRefreshMinutes) || 10;
+        const token = generateQrToken(req.params.eventId, validMinutes);
+        return res.json({ token, expiresAt: Date.now() + validMinutes * 60000, validMinutes });
+    }
+    catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+}));
 // GET /admin/phone-book — All collected numbers, optional ?eventId= filter
 // ==================================================================
 app.get('/admin/phone-book', (req, res) => __awaiter(void 0, void 0, void 0, function* () {

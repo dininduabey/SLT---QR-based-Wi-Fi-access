@@ -48,6 +48,7 @@ const EventSchema = new mongoose_1.Schema({
     policies: {
         type: {
             sessionDurationMinutes: Number,
+            qrRefreshMinutes: Number,
         },
         default: null
     }
