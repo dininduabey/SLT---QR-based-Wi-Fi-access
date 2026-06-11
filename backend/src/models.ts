@@ -14,8 +14,10 @@ export interface IEvent extends Document {
         termsUrl: string;
     };
     policies: {
-        sessionDurationMinutes: number;
+        sessionDurationMinutes?: number;
         qrRefreshMinutes?: number;
+        dataLimitMb?: number;
+        topupLimitPerUser?: number | null;
     } | null;
     createdAt: Date;
     updatedAt: Date;
@@ -35,6 +37,8 @@ const EventSchema = new Schema({
         type: {
             sessionDurationMinutes: Number,
         qrRefreshMinutes:       Number,
+        dataLimitMb:            Number,
+        topupLimitPerUser:      { type: Number, default: null },
         },
         default: null
     }
@@ -125,9 +129,74 @@ const CustomerPhoneBookSchema = new Schema({
     events: [{ eventId: String, eventName: String, timestamp: { type: Date, default: Date.now } }]
 });
 
+// ==========================================
+// DataToken Collection
+// ==========================================
+export interface IDataToken extends Document {
+    tokenId:      string;
+    eventId:      string;
+    phone:        string;
+    macAddress:   string;
+    dataLimitMb:  number;
+    dataUsedMb:   number;
+    topupCount:   number;
+    status:       'active' | 'exhausted';
+    acctSessions: Array<{ sessionId: string; octets: number; }>;
+    createdAt:    Date;
+    updatedAt:    Date;
+}
+
+const DataTokenSchema = new Schema({
+    tokenId:      { type: String, required: true, unique: true },
+    eventId:      { type: String, required: true },
+    phone:        { type: String, required: true },
+    macAddress:   { type: String, default: '' },
+    dataLimitMb:  { type: Number, required: true },
+    dataUsedMb:   { type: Number, default: 0 },
+    topupCount:   { type: Number, default: 0 },
+    status:       { type: String, enum: ['active', 'exhausted'], default: 'active' },
+    acctSessions: [{ sessionId: String, octets: { type: Number, default: 0 } }]
+}, { timestamps: true });
+
+DataTokenSchema.index({ eventId: 1, phone: 1 });
+
+// ==========================================
+// DataRequest Collection
+// ==========================================
+export interface IDataRequest extends Document {
+    requestId:    string;
+    eventId:      string;
+    phone:        string;
+    tokenId:      string;
+    topupNumber:  number;
+    status:       'pending' | 'approved' | 'rejected';
+    requestedAt:  Date;
+    resolvedAt?:  Date;
+    newTokenId?:  string;
+    adminMessage?: string;
+}
+
+const DataRequestSchema = new Schema({
+    requestId:    { type: String, required: true, unique: true },
+    eventId:      { type: String, required: true },
+    phone:        { type: String, required: true },
+    tokenId:      { type: String, required: true },
+    topupNumber:  { type: Number, required: true },
+    status:       { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+    requestedAt:  { type: Date, default: Date.now },
+    resolvedAt:   { type: Date },
+    newTokenId:   { type: String },
+    adminMessage: { type: String }
+});
+
+DataRequestSchema.index({ eventId: 1, phone: 1 });
+DataRequestSchema.index({ status: 1 });
+
 // Export Models
 export const EventModel             = mongoose.model<IEvent>('Event', EventSchema);
 export const OtpModel               = mongoose.model<IOtp>('Otp', OtpSchema);
 export const SessionModel           = mongoose.model<ISession>('Session', SessionSchema);
 export const AuditLogModel          = mongoose.model<IAuditLog>('AuditLog', AuditLogSchema);
 export const CustomerPhoneBookModel = mongoose.model<ICustomerPhoneBook>('CustomerPhoneBook', CustomerPhoneBookSchema);
+export const DataTokenModel   = mongoose.model<IDataToken>('DataToken', DataTokenSchema);
+export const DataRequestModel = mongoose.model<IDataRequest>('DataRequest', DataRequestSchema);

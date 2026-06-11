@@ -905,12 +905,14 @@ import { authorizeMacOnPfSense, revokeMacOnPfSense } from './pfsense';
 import { sendOtpViaSlt } from './smsGateway';
 import { EventModel, OtpModel, SessionModel, AuditLogModel, CustomerPhoneBookModel } from './models';
 import rateLimit from 'express-rate-limit';
+import { startRadiusServers, makeTokenPassword, RADIUS_SECRET } from './radiusServer';
+import { DataTokenModel, DataRequestModel } from './models';
 
 const MONGODB_URI = process.env.MONGODB_URI ||
     'mongodb://dpd:digital%40456@192.168.100.111:3401/slt_wifi_portal?authSource=admin';
 
 mongoose.connect(MONGODB_URI)
-    .then(() => console.log('MongoDB connected!'))
+    .then(() => { console.log('MongoDB connected!'); startRadiusServers(); })
     .catch(err => console.error('MongoDB connection failed:', err));
 
 const app = express();
@@ -1137,6 +1139,31 @@ app.post('/request-otp', async (req: Request, res: Response): Promise<any> => {
         if (!ev)                    return res.status(404).json({ error: 'Event not found' });
         if (ev.status !== 'active') return res.status(403).json({ error: 'Event is not active' });
 
+        // ── DATA LIMIT CHECK ────────────────────────────────────────────
+        if (ev.policies?.dataLimitMb) {
+            const existingToken = await DataTokenModel.findOne(
+                { eventId, phone: mobile }, null, { sort: { createdAt: -1 } }
+            );
+            if (existingToken && existingToken.status === 'exhausted') {
+                const topupLimit = ev.policies.topupLimitPerUser ?? null;
+                const canRequest = topupLimit === null || existingToken.topupCount < topupLimit;
+                const pending    = await DataRequestModel.findOne(
+                    { eventId, phone: mobile, status: 'pending' }
+                );
+                return res.status(200).json({
+                    success:    false,
+                    code:       'DATA_EXHAUSTED',
+                    usedMb:     parseFloat(existingToken.dataUsedMb.toFixed(1)),
+                    limitMb:    existingToken.dataLimitMb,
+                    topupCount: existingToken.topupCount,
+                    topupLimit,
+                    canRequest: canRequest && !pending,
+                    hasPending: !!pending,
+                    pendingId:  pending?.requestId || null,
+                });
+            }
+        }
+
         // Validate QR token if event uses refresh and token was provided
         if (ev.policies?.qrRefreshMinutes && qrToken) {
             if (!validateQrToken(qrToken, eventId)) {
@@ -1235,6 +1262,30 @@ app.post('/verify-otp', async (req: Request, res: Response): Promise<any> => {
         if (client_ip) cpStore.delete(client_ip);
         console.log(`[CP-AUTH] posting form → ${effective.substring(0, 80)}`);
 
+        // ── Create / reuse DataToken (RADIUS credentials) ────────────
+        let radiusUser = '';
+        let radiusPass = '';
+        if (ev.policies?.dataLimitMb) {
+            const { v4: uuidv4 } = require('uuid');
+            let dt = await DataTokenModel.findOne(
+                { eventId: ev.eventId, phone: mobile }, null, { sort: { createdAt: -1 } }
+            );
+            if (!dt || dt.status === 'exhausted') {
+                dt = await DataTokenModel.create({
+                    tokenId:     uuidv4(),
+                    eventId:     ev.eventId,
+                    phone:       mobile,
+                    dataLimitMb: ev.policies.dataLimitMb,
+                    topupCount:  dt ? dt.topupCount : 0,
+                });
+                console.log(`[VERIFY-OTP] DataToken created ${dt.tokenId} limit=${ev.policies.dataLimitMb}MB`);
+            } else {
+                console.log(`[VERIFY-OTP] DataToken reused ${dt.tokenId} used=${dt.dataUsedMb.toFixed(1)}MB`);
+            }
+            radiusUser = dt.tokenId;
+            radiusPass = makeTokenPassword(dt.tokenId);
+        }
+
         return res.send(`<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Connecting...</title>
 <style>body{margin:0;font-family:-apple-system,sans-serif;background:#f4f7f6;
@@ -1257,6 +1308,8 @@ h2{color:#005c42;font-size:20px;margin:0 0 8px}p{color:#888;font-size:13px}
   <input type="hidden" name="redirurl" value="http://124.43.216.136:45080/portal/success">
   <input type="hidden" name="zone"     value="main_zone">
   <input type="hidden" name="accept"   value="Continue">
+  ${radiusUser ? `<input type="hidden" name="user"     value="${radiusUser}">` : ''}
+  ${radiusPass ? `<input type="hidden" name="password" value="${radiusPass}">` : ''}
 </form>
 <script>setTimeout(function(){ document.getElementById('f').submit(); }, 1500);</script>
 </body></html>`);
@@ -1457,6 +1510,179 @@ app.get('/admin/phone-book/export', async (req: Request, res: Response): Promise
 });
 
 const PORT = process.env.PORT || 8080;
+// ════════════════════════════════════════════════════════════════════
+// DATA LIMIT / TOP-UP ENDPOINTS
+// ════════════════════════════════════════════════════════════════════
+
+// POST /request-topup — user requests more data after exhaustion
+app.post('/request-topup', async (req: Request, res: Response) => {
+    try {
+        const { phone, eventId } = req.body;
+        if (!phone || !eventId)
+            return res.status(400).json({ success: false, message: 'phone and eventId required' });
+
+        const mobile = normalizeMobile(phone);
+        const ev     = await EventModel.findOne({ eventId });
+        if (!ev) return res.status(404).json({ success: false, message: 'Event not found' });
+
+        const token = await DataTokenModel.findOne(
+            { eventId, phone: mobile, status: 'exhausted' },
+            null, { sort: { createdAt: -1 } }
+        );
+        if (!token)
+            return res.status(400).json({ success: false, message: 'No exhausted token found' });
+
+        const topupLimit  = ev.policies?.topupLimitPerUser ?? null;
+        const topupNumber = token.topupCount + 1;
+        const overLimit   = topupLimit !== null && topupNumber > topupLimit;
+
+        // Prevent duplicate pending requests
+        const existing = await DataRequestModel.findOne({ eventId, phone: mobile, status: 'pending' });
+        if (existing)
+            return res.status(200).json({
+                success: true, requestId: existing.requestId, status: 'pending',
+                message: 'Your top-up request is already pending'
+            });
+
+        const { v4: uuidv4 } = require('uuid');
+        const requestId = uuidv4();
+        const createPayload: any = {
+            requestId, eventId, phone: mobile,
+            tokenId:     token.tokenId,
+            topupNumber,
+            status:      overLimit ? 'rejected' : 'pending',
+        };
+        if (overLimit) createPayload.adminMessage =
+            `Top-up limit of ${topupLimit} reached. No further top-ups available.`;
+        await DataRequestModel.create(createPayload);
+
+        console.log(`[TOPUP] Request ${requestId} by ${mobile} topup#${topupNumber} overLimit=${overLimit}`);
+
+        return res.json({
+            success:   true,
+            requestId,
+            status:    overLimit ? 'rejected' : 'pending',
+            overLimit,
+            topupNumber,
+            topupLimit,
+            message:   overLimit
+                ? `You have reached the maximum of ${topupLimit} top-up(s) for this event.`
+                : 'Top-up request submitted. Please wait for admin approval.'
+        });
+    } catch (err: any) {
+        console.error('[TOPUP] Error:', err);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// GET /topup-status/:requestId — poll for approval
+app.get('/topup-status/:requestId', async (req: Request, res: Response) => {
+    try {
+        const dr = await DataRequestModel.findOne({ requestId: req.params.requestId });
+        if (!dr) return res.status(404).json({ success: false, message: 'Request not found' });
+
+        const ev    = await EventModel.findOne({ eventId: dr.eventId });
+        const token = dr.newTokenId
+            ? await DataTokenModel.findOne({ tokenId: dr.newTokenId })
+            : null;
+
+        const topupLimit = ev?.policies?.topupLimitPerUser ?? null;
+
+        return res.json({
+            success:      true,
+            status:       dr.status,
+            topupNumber:  dr.topupNumber,
+            topupLimit,
+            adminMessage: dr.adminMessage || null,
+            newTokenId:   dr.newTokenId   || null,
+            dataLimitMb:  token?.dataLimitMb || null,
+        });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// GET /admin/data-tokens/:eventId — all tokens for an event
+app.get('/admin/data-tokens/:eventId', async (req: Request, res: Response) => {
+    try {
+        const tokens = await DataTokenModel.find(
+            { eventId: req.params.eventId },
+            { acctSessions: 0 }
+        ).sort({ createdAt: -1 });
+        res.json({ success: true, tokens });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// GET /admin/topup-requests — pending top-up requests (all events or ?eventId=)
+app.get('/admin/topup-requests', async (req: Request, res: Response) => {
+    try {
+        const filter: any = {};
+        if (req.query.eventId) filter.eventId = req.query.eventId as string;
+        if (req.query.status)  filter.status  = req.query.status as string;
+        const requests = await DataRequestModel.find(filter).sort({ requestedAt: -1 });
+        res.json({ success: true, requests });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// POST /admin/topup-requests/:requestId/approve
+app.post('/admin/topup-requests/:requestId/approve', async (req: Request, res: Response) => {
+    try {
+        const dr = await DataRequestModel.findOne({ requestId: req.params.requestId });
+        if (!dr)         return res.status(404).json({ success: false, message: 'Request not found' });
+        if (dr.status !== 'pending')
+            return res.status(400).json({ success: false, message: `Request is already ${dr.status}` });
+
+        const adminMessage = req.body.adminMessage || 'Your top-up has been approved. Please reconnect.';
+        const ev           = await EventModel.findOne({ eventId: dr.eventId });
+        const dataLimitMb  = ev?.policies?.dataLimitMb || 100;
+
+        const { v4: uuidv4 } = require('uuid');
+        const newTokenId = uuidv4();
+
+        await DataTokenModel.create({
+            tokenId:    newTokenId,
+            eventId:    dr.eventId,
+            phone:      dr.phone,
+            dataLimitMb,
+            topupCount: dr.topupNumber,
+        });
+
+        await DataRequestModel.updateOne({ requestId: dr.requestId }, {
+            $set: { status: 'approved', resolvedAt: new Date(), newTokenId, adminMessage }
+        });
+
+        console.log(`[TOPUP] Approved ${dr.requestId} → newToken=${newTokenId}`);
+        res.json({ success: true, newTokenId, message: 'Top-up approved' });
+    } catch (err: any) {
+        console.error('[TOPUP-APPROVE] Error:', err);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// POST /admin/topup-requests/:requestId/reject
+app.post('/admin/topup-requests/:requestId/reject', async (req: Request, res: Response) => {
+    try {
+        const dr = await DataRequestModel.findOne({ requestId: req.params.requestId });
+        if (!dr)         return res.status(404).json({ success: false, message: 'Request not found' });
+        if (dr.status !== 'pending')
+            return res.status(400).json({ success: false, message: `Request is already ${dr.status}` });
+
+        const adminMessage = req.body.adminMessage || 'Your top-up request was not approved.';
+        await DataRequestModel.updateOne({ requestId: dr.requestId }, {
+            $set: { status: 'rejected', resolvedAt: new Date(), adminMessage }
+        });
+
+        console.log(`[TOPUP] Rejected ${dr.requestId}`);
+        res.json({ success: true, message: 'Top-up rejected' });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`SLT Wi-Fi Auth API on port ${PORT}`);
     console.log(`pfSense: ${process.env.PFSENSE_HOST || '(mock)'}`);

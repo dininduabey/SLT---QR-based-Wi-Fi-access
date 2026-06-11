@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, useParams, useSearchParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import AdminDashboard from './AdminDashboard';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -21,7 +21,7 @@ const api = {
             body: JSON.stringify({ mobile, eventId, ...(qrToken ? { qrToken } : {}) })
         });
         const data = await res.json();
-        if (!data.success) throw new Error(data.error);
+        if (!data.success && data.code !== 'DATA_EXHAUSTED') throw new Error(data.error || data.message);
         return data;
     },
     verifyOtp: async (mobile: string, otp: string, eventId: string, mac: string, cpAction: string) => {
@@ -53,6 +53,26 @@ const api = {
         return data;
     }
 };
+
+// ---------------------------------------------------------
+// Data limit API helpers
+// ---------------------------------------------------------
+const dataApi = {
+    requestTopup: async (phone: string, eventId: string) => {
+        const res = await fetch(`${API_URL}/request-topup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone, eventId })
+        });
+        return await res.json();
+    },
+    topupStatus: async (requestId: string) => {
+        const res = await fetch(`${API_URL}/topup-status/${requestId}`);
+        return await res.json();
+    },
+};
+
+
 
 // ---------------------------------------------------------
 // QrDisplayPage — full-screen QR for projector / display screen
@@ -540,6 +560,7 @@ const EventPortal = () => {
     const cpAction   = searchParams.get('cp_action') || '';
     const qrToken    = searchParams.get('t') || undefined;
 
+    const navigate = useNavigate();
     const [eventDetails, setEventDetails] = useState<any>(null);
     const [mobile, setMobile]             = useState('');
     const [otp, setOtp]                   = useState('');
@@ -564,7 +585,11 @@ const EventPortal = () => {
         if (normalizedMobile.length !== 9 || !/^[0-9]{9}$/.test(normalizedMobile)) { setErrorMsg('Please enter a valid Sri Lankan mobile number (e.g. 0711234567 or 711234567).'); return; }
         setIsLoading(true);
         try {
-            await api.requestOtp(mobile, eventId as string, qrToken);
+            const data = await api.requestOtp(mobile, eventId as string, qrToken);
+            if (data.code === 'DATA_EXHAUSTED') {
+                navigate('/data-exhausted', { state: { phone: mobile, eventId, ...data } });
+                return;
+            }
             setStep('OTP');
             setErrorMsg('');
         } catch (error: any) {
@@ -742,6 +767,169 @@ const EventPortal = () => {
 // App — route definitions
 // /portal/success MUST be before /portal/:eventId
 // ---------------------------------------------------------
+
+// ==========================================================
+// Data Exhausted Page  /data-exhausted
+// ==========================================================
+function DataExhaustedPage() {
+    const location = useLocation();
+    const state: any = location.state || {};
+    const {
+        phone = '', eventId = '',
+        usedMb = 0, limitMb = 0,
+        topupCount = 0, topupLimit = null,
+        canRequest = false, hasPending = false, pendingId = null,
+    } = state;
+
+    type Screen = 'info' | 'requesting' | 'polling' | 'approved' | 'rejected';
+    const [screen, setScreen]         = useState<Screen>(hasPending && pendingId ? 'polling' : 'info');
+    const [requestId, setRequestId]   = useState<string>(pendingId || '');
+    const [adminMsg, setAdminMsg]     = useState('');
+    const [topupNum, setTopupNum]     = useState(topupCount + 1);
+    const [busy, setBusy]             = useState(false);
+    const [pollErr, setPollErr]       = useState('');
+
+    // Poll every 3 s while in polling screen
+    useEffect(() => {
+        if (screen !== 'polling' || !requestId) return;
+        const iv = setInterval(async () => {
+            try {
+                const d = await dataApi.topupStatus(requestId);
+                if (d.status === 'approved') {
+                    setAdminMsg(d.adminMessage || 'Your top-up has been approved!');
+                    clearInterval(iv);
+                    setScreen('approved');
+                } else if (d.status === 'rejected') {
+                    setAdminMsg(d.adminMessage || 'Your request was not approved.');
+                    clearInterval(iv);
+                    setScreen('rejected');
+                }
+            } catch { setPollErr('Connection error — retrying...'); }
+        }, 3000);
+        return () => clearInterval(iv);
+    }, [screen, requestId]);
+
+    const handleRequest = async () => {
+        setBusy(true);
+        try {
+            const d = await dataApi.requestTopup(phone, eventId);
+            if (d.success) {
+                setRequestId(d.requestId);
+                setTopupNum(d.topupNumber || topupCount + 1);
+                setScreen(d.status === 'rejected' ? 'rejected' : 'polling');
+                if (d.status === 'rejected') setAdminMsg(d.message || '');
+            } else {
+                setAdminMsg(d.message || 'Could not submit request.');
+            }
+        } catch { setAdminMsg('Network error. Please try again.'); }
+        setBusy(false);
+    };
+
+    const pct = limitMb ? Math.min(100, Math.round((usedMb / limitMb) * 100)) : 0;
+
+    const containerStyle: React.CSSProperties = {
+        minHeight: '100vh', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        background: 'linear-gradient(135deg,#003d2b 0%,#00603f 100%)',
+        padding: '24px', fontFamily: 'sans-serif', color: '#fff'
+    };
+    const cardStyle: React.CSSProperties = {
+        background: '#fff', borderRadius: 16, padding: '32px 28px',
+        maxWidth: 380, width: '100%', color: '#222', textAlign: 'center',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.25)'
+    };
+    const btnStyle = (col: string): React.CSSProperties => ({
+        width: '100%', padding: '14px', borderRadius: 8, border: 'none',
+        background: col, color: '#fff', fontSize: 16, fontWeight: 700,
+        cursor: busy ? 'not-allowed' : 'pointer', marginTop: 20,
+        opacity: busy ? 0.7 : 1
+    });
+
+    if (screen === 'info') return (
+        <div style={containerStyle}>
+            <div style={cardStyle}>
+                <div style={{fontSize:48,marginBottom:8}}>📶</div>
+                <h2 style={{color:'#c0392b',margin:'0 0 6px'}}>Data Limit Reached</h2>
+                <p style={{color:'#555',marginBottom:20}}>
+                    You have used <strong>{usedMb} MB</strong> of your <strong>{limitMb} MB</strong> allocation.
+                </p>
+                <div style={{background:'#f0f0f0',borderRadius:8,height:12,overflow:'hidden',marginBottom:20}}>
+                    <div style={{width:`${pct}%`,height:'100%',background:'#c0392b',transition:'width 0.5s'}}/>
+                </div>
+                {canRequest ? (
+                    <>
+                        <p style={{color:'#555',fontSize:14}}>
+                            Request a data top-up from the event admin.
+                            {topupLimit !== null && (
+                                <> You have used <strong>{topupCount}</strong> of <strong>{topupLimit}</strong> top-up(s).</>
+                            )}
+                        </p>
+                        <button style={btnStyle('#005c42')} onClick={handleRequest} disabled={busy}>
+                            {busy ? 'Submitting...' : '📩 Request Top-Up'}
+                        </button>
+                    </>
+                ) : (
+                    <p style={{color:'#888',fontSize:14}}>
+                        {topupLimit !== null
+                            ? `You have reached the maximum of ${topupLimit} top-up(s) for this event.`
+                            : 'No further top-ups are available for this event.'}
+                    </p>
+                )}
+                {adminMsg && <p style={{color:'#c0392b',marginTop:12,fontSize:14}}>{adminMsg}</p>}
+            </div>
+        </div>
+    );
+
+    if (screen === 'polling') return (
+        <div style={containerStyle}>
+            <div style={cardStyle}>
+                <div style={{fontSize:48,marginBottom:8}}>⏳</div>
+                <h2 style={{margin:'0 0 12px'}}>Top-Up Request Sent</h2>
+                <p style={{color:'#555'}}>
+                    Your request #{topupNum} is waiting for admin approval.<br/>
+                    <strong>Please keep this page open.</strong>
+                </p>
+                <div style={{margin:'24px auto',width:48,height:48,border:'5px solid #e0e0e0',
+                    borderTop:'5px solid #005c42',borderRadius:'50%',
+                    animation:'spin 1s linear infinite'}}/>
+                <p style={{color:'#888',fontSize:13}}>Checking every few seconds...</p>
+                {pollErr && <p style={{color:'#c0392b',fontSize:13}}>{pollErr}</p>}
+                <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+            </div>
+        </div>
+    );
+
+    if (screen === 'approved') return (
+        <div style={containerStyle}>
+            <div style={cardStyle}>
+                <div style={{fontSize:56,marginBottom:8}}>✅</div>
+                <h2 style={{color:'#005c42',margin:'0 0 12px'}}>Top-Up Approved!</h2>
+                <p style={{color:'#555'}}>{adminMsg}</p>
+                <div style={{background:'#f0faf5',borderRadius:10,padding:'16px',marginTop:16,textAlign:'left'}}>
+                    <p style={{margin:0,fontWeight:700,marginBottom:6}}>To reconnect:</p>
+                    <ol style={{margin:0,paddingLeft:20,color:'#444',lineHeight:1.8}}>
+                        <li>Turn Wi-Fi off, then on</li>
+                        <li>Reconnect to <strong>SLT WiFi</strong></li>
+                        <li>Scan the QR code again</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    );
+
+    if (screen === 'rejected') return (
+        <div style={containerStyle}>
+            <div style={cardStyle}>
+                <div style={{fontSize:56,marginBottom:8}}>❌</div>
+                <h2 style={{color:'#c0392b',margin:'0 0 12px'}}>Request Not Approved</h2>
+                <p style={{color:'#555'}}>{adminMsg || 'Your top-up request was not approved by the admin.'}</p>
+            </div>
+        </div>
+    );
+
+    return null;
+}
+
 export default function App() {
     return (
         <Router>
@@ -750,6 +938,7 @@ export default function App() {
                 <Route path="/portal/:eventId" element={<EventPortal />} />
                 <Route path="/qr-display/:eventId" element={<QrDisplayPage />} />
                 <Route path="/qr-scan"           element={<QrScanPage />} />
+                <Route path="/data-exhausted"     element={<DataExhaustedPage />} />
                 <Route path="/"               element={<ProtectedAdmin />} />
             </Routes>
         </Router>

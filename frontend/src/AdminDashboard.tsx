@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import TopupRequestsTab from './TopupRequestsTab';
 import { QRCodeSVG } from 'qrcode.react';
 
 const API_URL = '/api';
@@ -24,7 +25,7 @@ interface EventData {
 // Admin Dashboard
 // ============================================================
 export default function AdminDashboard() {
-    const [activeTab, setActiveTab] = useState<'create' | 'manage'>('create');
+    const [activeTab, setActiveTab] = useState<'create' | 'manage' | 'topups'>('create');
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 font-sans">
@@ -65,6 +66,12 @@ export default function AdminDashboard() {
                     >
                         Manage Events
                     </button>
+                    <button
+                        onClick={() => setActiveTab('topups')}
+                        className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeTab === 'topups' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
+                    >
+                        📊 Top-Up Requests
+                    </button>
                 </div>
             </div>
 
@@ -72,6 +79,7 @@ export default function AdminDashboard() {
             <div className="max-w-7xl mx-auto px-6 py-6">
                 {activeTab === 'create' && <CreateEventTab />}
                 {activeTab === 'manage' && <ManageEventsTab />}
+                {activeTab === 'topups' && <TopupRequestsTab />}
             </div>
         </div>
     );
@@ -88,6 +96,8 @@ function CreateEventTab() {
     const [isRegistering, setIsRegistering] = useState(false);
     const [hasLimits, setHasLimits]             = useState(true);
     const [qrRefreshMinutes, setQrRefreshMinutes] = useState(0);
+    const [dataLimitMb, setDataLimitMb]           = useState(0);
+    const [topupLimit, setTopupLimit]             = useState('');
     const [qrToken, setQrToken]                   = useState('');
     const [qrExpiresAt, setQrExpiresAt]           = useState(0);
     const [timeLeft, setTimeLeft]                 = useState(0);
@@ -126,9 +136,11 @@ function CreateEventTab() {
                         backgroundColor: "#f4f7f6",
                         termsUrl: "#"
                     },
-                    policies: hasLimits || qrRefreshMinutes > 0 ? {
+                    policies: hasLimits || qrRefreshMinutes > 0 || dataLimitMb > 0 ? {
                         ...(hasLimits ? { sessionDurationMinutes: sessionDuration } : {}),
                         ...(qrRefreshMinutes > 0 ? { qrRefreshMinutes } : {}),
+                        ...(dataLimitMb > 0 ? { dataLimitMb } : {}),
+                        ...(dataLimitMb > 0 && topupLimit !== '' ? { topupLimitPerUser: Number(topupLimit) } : {}),
                     } : null
                 })
             });
@@ -238,9 +250,28 @@ function CreateEventTab() {
                             <input type="number" value={sessionDuration} onChange={e => setSessionDuration(Number(e.target.value))} disabled={!hasLimits}
                                 className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm disabled:bg-slate-50" />
                         </div>
-
+                    </div>
+                    {/* Data Limit */}
+                    <div className="mt-4 pt-4 border-t border-slate-100">
+                        <h4 className="text-xs font-bold text-slate-600 mb-3">📊 Data Limit (RADIUS)</h4>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Data Limit per User (MB)</label>
+                                <input type="number" min="0" value={dataLimitMb || ''} onChange={e => setDataLimitMb(Number(e.target.value))}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                                    placeholder="e.g. 500 (0 = no limit)" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Max Top-Ups per User</label>
+                                <input type="number" min="0" value={topupLimit} onChange={e => setTopupLimit(e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                                    placeholder="blank = limitless" />
+                                <p className="text-xs text-slate-400 mt-1">Leave blank for unlimited top-ups</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
+
 
 
                 {/* Actions */}

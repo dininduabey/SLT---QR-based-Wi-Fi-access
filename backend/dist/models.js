@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CustomerPhoneBookModel = exports.AuditLogModel = exports.SessionModel = exports.OtpModel = exports.EventModel = void 0;
+exports.DataRequestModel = exports.DataTokenModel = exports.CustomerPhoneBookModel = exports.AuditLogModel = exports.SessionModel = exports.OtpModel = exports.EventModel = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const EventSchema = new mongoose_1.Schema({
     eventId: { type: String, required: true, unique: true },
@@ -49,6 +49,8 @@ const EventSchema = new mongoose_1.Schema({
         type: {
             sessionDurationMinutes: Number,
             qrRefreshMinutes: Number,
+            dataLimitMb: Number,
+            topupLimitPerUser: { type: Number, default: null },
         },
         default: null
     }
@@ -86,9 +88,37 @@ const CustomerPhoneBookSchema = new mongoose_1.Schema({
     lastSeen: { type: Date, default: Date.now },
     events: [{ eventId: String, eventName: String, timestamp: { type: Date, default: Date.now } }]
 });
+const DataTokenSchema = new mongoose_1.Schema({
+    tokenId: { type: String, required: true, unique: true },
+    eventId: { type: String, required: true },
+    phone: { type: String, required: true },
+    macAddress: { type: String, default: '' },
+    dataLimitMb: { type: Number, required: true },
+    dataUsedMb: { type: Number, default: 0 },
+    topupCount: { type: Number, default: 0 },
+    status: { type: String, enum: ['active', 'exhausted'], default: 'active' },
+    acctSessions: [{ sessionId: String, octets: { type: Number, default: 0 } }]
+}, { timestamps: true });
+DataTokenSchema.index({ eventId: 1, phone: 1 });
+const DataRequestSchema = new mongoose_1.Schema({
+    requestId: { type: String, required: true, unique: true },
+    eventId: { type: String, required: true },
+    phone: { type: String, required: true },
+    tokenId: { type: String, required: true },
+    topupNumber: { type: Number, required: true },
+    status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+    requestedAt: { type: Date, default: Date.now },
+    resolvedAt: { type: Date },
+    newTokenId: { type: String },
+    adminMessage: { type: String }
+});
+DataRequestSchema.index({ eventId: 1, phone: 1 });
+DataRequestSchema.index({ status: 1 });
 // Export Models
 exports.EventModel = mongoose_1.default.model('Event', EventSchema);
 exports.OtpModel = mongoose_1.default.model('Otp', OtpSchema);
 exports.SessionModel = mongoose_1.default.model('Session', SessionSchema);
 exports.AuditLogModel = mongoose_1.default.model('AuditLog', AuditLogSchema);
 exports.CustomerPhoneBookModel = mongoose_1.default.model('CustomerPhoneBook', CustomerPhoneBookSchema);
+exports.DataTokenModel = mongoose_1.default.model('DataToken', DataTokenSchema);
+exports.DataRequestModel = mongoose_1.default.model('DataRequest', DataRequestSchema);
