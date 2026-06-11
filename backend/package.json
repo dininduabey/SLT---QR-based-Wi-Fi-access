@@ -12,6 +12,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@types/uuid": "^10.0.0",
     "axios": "^1.15.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -19,7 +20,8 @@
     "express-rate-limit": "^8.5.2",
     "mongoose": "^9.5.0",
     "node-ssh": "^13.2.1",
-    "radius": "^1.1.4"
+    "radius": "^1.1.4",
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

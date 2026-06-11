@@ -54,7 +54,14 @@ export function startRadiusServers() {
                     const remainBytes = Math.max(0,
                         Math.floor((token.dataLimitMb - token.dataUsedMb) * 1048576));
                     code  = 'Access-Accept';
-                    attrs = [['pfSense-Max-Total-Octets', remainBytes]];
+                    // Construct pfSense VSA manually (Vendor 13644, Attr 3, uint32 BE)
+                    const vsaBuf = Buffer.allocUnsafe(6);
+                    vsaBuf.writeUInt8(3, 0);          // vendor attribute type
+                    vsaBuf.writeUInt8(6, 1);          // length (2 header + 4 value)
+                    vsaBuf.writeUInt32BE(remainBytes, 2); // value in bytes
+                    const vendorBuf = Buffer.allocUnsafe(4);
+                    vendorBuf.writeUInt32BE(13644, 0); // pfSense vendor ID
+                    attrs = [['Vendor-Specific', Buffer.concat([vendorBuf, vsaBuf])]];
                     if (!token.macAddress) {
                         await DataTokenModel.updateOne({ tokenId }, { $set: { macAddress: mac } });
                     }

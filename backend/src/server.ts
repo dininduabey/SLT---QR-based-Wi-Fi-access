@@ -905,6 +905,7 @@ import { authorizeMacOnPfSense, revokeMacOnPfSense } from './pfsense';
 import { sendOtpViaSlt } from './smsGateway';
 import { EventModel, OtpModel, SessionModel, AuditLogModel, CustomerPhoneBookModel } from './models';
 import rateLimit from 'express-rate-limit';
+import { v4 as uuidv4 } from 'uuid';
 import { startRadiusServers, makeTokenPassword, RADIUS_SECRET } from './radiusServer';
 import { DataTokenModel, DataRequestModel } from './models';
 
@@ -1266,7 +1267,6 @@ app.post('/verify-otp', async (req: Request, res: Response): Promise<any> => {
         let radiusUser = '';
         let radiusPass = '';
         if (ev.policies?.dataLimitMb) {
-            const { v4: uuidv4 } = require('uuid');
             let dt = await DataTokenModel.findOne(
                 { eventId: ev.eventId, phone: mobile }, null, { sort: { createdAt: -1 } }
             );
@@ -1544,7 +1544,6 @@ app.post('/request-topup', async (req: Request, res: Response) => {
                 message: 'Your top-up request is already pending'
             });
 
-        const { v4: uuidv4 } = require('uuid');
         const requestId = uuidv4();
         const createPayload: any = {
             requestId, eventId, phone: mobile,
@@ -1640,7 +1639,6 @@ app.post('/admin/topup-requests/:requestId/approve', async (req: Request, res: R
         const ev           = await EventModel.findOne({ eventId: dr.eventId });
         const dataLimitMb  = ev?.policies?.dataLimitMb || 100;
 
-        const { v4: uuidv4 } = require('uuid');
         const newTokenId = uuidv4();
 
         await DataTokenModel.create({

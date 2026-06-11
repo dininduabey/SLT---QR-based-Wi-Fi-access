@@ -799,6 +799,7 @@ const crypto_1 = __importDefault(require("crypto"));
 const pfsense_1 = require("./pfsense");
 const smsGateway_1 = require("./smsGateway");
 const models_1 = require("./models");
+const uuid_1 = require("uuid");
 const radiusServer_1 = require("./radiusServer");
 const models_2 = require("./models");
 const MONGODB_URI = process.env.MONGODB_URI ||
@@ -1126,11 +1127,10 @@ app.post('/verify-otp', (req, res) => __awaiter(void 0, void 0, void 0, function
         let radiusUser = '';
         let radiusPass = '';
         if ((_b = ev.policies) === null || _b === void 0 ? void 0 : _b.dataLimitMb) {
-            const { v4: uuidv4 } = require('uuid');
             let dt = yield models_2.DataTokenModel.findOne({ eventId: ev.eventId, phone: mobile }, null, { sort: { createdAt: -1 } });
             if (!dt || dt.status === 'exhausted') {
                 dt = yield models_2.DataTokenModel.create({
-                    tokenId: uuidv4(),
+                    tokenId: (0, uuid_1.v4)(),
                     eventId: ev.eventId,
                     phone: mobile,
                     dataLimitMb: ev.policies.dataLimitMb,
@@ -1393,8 +1393,7 @@ app.post('/request-topup', (req, res) => __awaiter(void 0, void 0, void 0, funct
                 success: true, requestId: existing.requestId, status: 'pending',
                 message: 'Your top-up request is already pending'
             });
-        const { v4: uuidv4 } = require('uuid');
-        const requestId = uuidv4();
+        const requestId = (0, uuid_1.v4)();
         const createPayload = {
             requestId, eventId, phone: mobile,
             tokenId: token.tokenId,
@@ -1486,8 +1485,7 @@ app.post('/admin/topup-requests/:requestId/approve', (req, res) => __awaiter(voi
         const adminMessage = req.body.adminMessage || 'Your top-up has been approved. Please reconnect.';
         const ev = yield models_1.EventModel.findOne({ eventId: dr.eventId });
         const dataLimitMb = ((_a = ev === null || ev === void 0 ? void 0 : ev.policies) === null || _a === void 0 ? void 0 : _a.dataLimitMb) || 100;
-        const { v4: uuidv4 } = require('uuid');
-        const newTokenId = uuidv4();
+        const newTokenId = (0, uuid_1.v4)();
         yield models_2.DataTokenModel.create({
             tokenId: newTokenId,
             eventId: dr.eventId,
