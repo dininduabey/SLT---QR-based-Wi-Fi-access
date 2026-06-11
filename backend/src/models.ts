@@ -106,8 +106,26 @@ const AuditLogSchema = new Schema({
     timestamp: { type: Date, default: Date.now }
 });
 
+// ==========================================
+// Customer Phone Book Collection
+// ==========================================
+export interface ICustomerPhoneBook extends Document {
+    phone: string;
+    firstSeen: Date;
+    lastSeen: Date;
+    events: Array<{ eventId: string; eventName: string; timestamp: Date; }>;
+}
+
+const CustomerPhoneBookSchema = new Schema({
+    phone:     { type: String, required: true, unique: true },
+    firstSeen: { type: Date, default: Date.now },
+    lastSeen:  { type: Date, default: Date.now },
+    events: [{ eventId: String, eventName: String, timestamp: { type: Date, default: Date.now } }]
+});
+
 // Export Models
-export const EventModel = mongoose.model<IEvent>('Event', EventSchema);
-export const OtpModel = mongoose.model<IOtp>('Otp', OtpSchema);
-export const SessionModel = mongoose.model<ISession>('Session', SessionSchema);
-export const AuditLogModel = mongoose.model<IAuditLog>('AuditLog', AuditLogSchema);
+export const EventModel             = mongoose.model<IEvent>('Event', EventSchema);
+export const OtpModel               = mongoose.model<IOtp>('Otp', OtpSchema);
+export const SessionModel           = mongoose.model<ISession>('Session', SessionSchema);
+export const AuditLogModel          = mongoose.model<IAuditLog>('AuditLog', AuditLogSchema);
+export const CustomerPhoneBookModel = mongoose.model<ICustomerPhoneBook>('CustomerPhoneBook', CustomerPhoneBookSchema);

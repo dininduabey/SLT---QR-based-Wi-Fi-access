@@ -6,7 +6,7 @@
 
 // import { authorizeMacOnPfSense, revokeMacOnPfSense } from './pfsense';
 // import { sendOtpViaSlt } from './smsGateway';
-// import { EventModel, OtpModel, SessionModel, AuditLogModel } from './models';
+// import { EventModel, OtpModel, SessionModel, AuditLogModel, CustomerPhoneBookModel } from './models';
 
 // const MONGODB_URI = process.env.MONGODB_URI ||
 //     'mongodb://dpd:digital%40456@192.168.100.111:3401/slt_wifi_portal?authSource=admin';
@@ -386,7 +386,6 @@
 //     });
 // });
 
-// const PORT = process.env.PORT || 8080;
 // app.listen(PORT, () => {
 //     console.log(`SLT Wi-Fi Auth API on port ${PORT}`);
 //     console.log(`pfSense: ${process.env.PFSENSE_HOST || '(mock)'}`);
@@ -401,7 +400,7 @@
 
 // import { authorizeMacOnPfSense, revokeMacOnPfSense } from './pfsense';
 // import { sendOtpViaSlt } from './smsGateway';
-// import { EventModel, OtpModel, SessionModel, AuditLogModel } from './models';
+// import { EventModel, OtpModel, SessionModel, AuditLogModel, CustomerPhoneBookModel } from './models';
 
 // const MONGODB_URI = process.env.MONGODB_URI ||
 //     'mongodb://dpd:digital%40456@192.168.100.111:3401/slt_wifi_portal?authSource=admin';
@@ -877,7 +876,6 @@
 //     });
 // });
 
-// const PORT = process.env.PORT || 8080;
 // app.listen(PORT, () => {
 //     console.log(`SLT Wi-Fi Auth API on port ${PORT}`);
 //     console.log(`pfSense: ${process.env.PFSENSE_HOST || '(mock)'}`);
@@ -905,7 +903,7 @@ import crypto from 'crypto';
 
 import { authorizeMacOnPfSense, revokeMacOnPfSense } from './pfsense';
 import { sendOtpViaSlt } from './smsGateway';
-import { EventModel, OtpModel, SessionModel, AuditLogModel } from './models';
+import { EventModel, OtpModel, SessionModel, AuditLogModel, CustomerPhoneBookModel } from './models';
 
 const MONGODB_URI = process.env.MONGODB_URI ||
     'mongodb://dpd:digital%40456@192.168.100.111:3401/slt_wifi_portal?authSource=admin';
@@ -1167,6 +1165,21 @@ app.post('/verify-otp', async (req: Request, res: Response): Promise<any> => {
         await OtpModel.deleteOne({ _id: otpDoc._id });
         await new AuditLogModel({ action: 'session_created', eventId, mobile, macAddress: mac, clientIp: requestIp }).save();
 
+        // Persist phone number to phone book (non-blocking — errors do not fail auth)
+        try {
+            await CustomerPhoneBookModel.findOneAndUpdate(
+                { phone: mobile },
+                { $set: { lastSeen: new Date() }, $setOnInsert: { firstSeen: new Date(), events: [] } },
+                { upsert: true }
+            );
+            await CustomerPhoneBookModel.updateOne(
+                { phone: mobile, 'events.eventId': { $ne: eventId } },
+                { $push: { events: { eventId, eventName: ev.name, timestamp: new Date() } } }
+            );
+        } catch (pbErr) {
+            console.error('[PHONE-BOOK] upsert error (non-critical):', pbErr);
+        }
+
         const clean = (s: string) => s && !s.includes('$') ? s.trim() : '';
 
         const PFSENSE_CP_URL = 'http://172.31.98.1:8002/index.php?zone=main_zone&redirurl=' +
@@ -1347,6 +1360,52 @@ app.get('/admin/events/:eventId/report', async (req: Request, res: Response): Pr
 });
 
 
+
+// ==================================================================
+// GET /admin/phone-book — All collected numbers, optional ?eventId= filter
+// ==================================================================
+app.get('/admin/phone-book', async (req: Request, res: Response): Promise<any> => {
+    try {
+        const { eventId } = req.query;
+        const query = eventId ? { 'events.eventId': eventId as string } : {};
+        const entries = await CustomerPhoneBookModel.find(query).sort({ lastSeen: -1 });
+        return res.json({
+            total: entries.length,
+            entries: entries.map(e => ({
+                phone:      e.phone,
+                firstSeen:  e.firstSeen,
+                lastSeen:   e.lastSeen,
+                eventCount: e.events.length,
+                events:     e.events
+            }))
+        });
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// ==================================================================
+// GET /admin/phone-book/export — Download as CSV, optional ?eventId= filter
+// ==================================================================
+app.get('/admin/phone-book/export', async (req: Request, res: Response): Promise<any> => {
+    try {
+        const { eventId } = req.query;
+        const query = eventId ? { 'events.eventId': eventId as string } : {};
+        const entries = await CustomerPhoneBookModel.find(query).sort({ lastSeen: -1 });
+        const label = eventId ? `event-${eventId}` : 'all-events';
+        const csv = [
+            'Phone Number,First Seen,Last Seen,Events Attended,Event IDs',
+            ...entries.map(e =>
+                `${e.phone},${e.firstSeen.toISOString()},${e.lastSeen.toISOString()},${e.events.length},"${e.events.map((ev: any) => ev.eventId).join(' | ')}"`
+            )
+        ].join('\n');
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="phone-book-${label}.csv"`);
+        return res.send(csv);
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {

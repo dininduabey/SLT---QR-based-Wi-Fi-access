@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AuditLogModel = exports.SessionModel = exports.OtpModel = exports.EventModel = void 0;
+exports.CustomerPhoneBookModel = exports.AuditLogModel = exports.SessionModel = exports.OtpModel = exports.EventModel = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const EventSchema = new mongoose_1.Schema({
     eventId: { type: String, required: true, unique: true },
@@ -79,8 +79,15 @@ const AuditLogSchema = new mongoose_1.Schema({
     clientIp: { type: String },
     timestamp: { type: Date, default: Date.now }
 });
+const CustomerPhoneBookSchema = new mongoose_1.Schema({
+    phone: { type: String, required: true, unique: true },
+    firstSeen: { type: Date, default: Date.now },
+    lastSeen: { type: Date, default: Date.now },
+    events: [{ eventId: String, eventName: String, timestamp: { type: Date, default: Date.now } }]
+});
 // Export Models
 exports.EventModel = mongoose_1.default.model('Event', EventSchema);
 exports.OtpModel = mongoose_1.default.model('Otp', OtpSchema);
 exports.SessionModel = mongoose_1.default.model('Session', SessionSchema);
 exports.AuditLogModel = mongoose_1.default.model('AuditLog', AuditLogSchema);
+exports.CustomerPhoneBookModel = mongoose_1.default.model('CustomerPhoneBook', CustomerPhoneBookSchema);

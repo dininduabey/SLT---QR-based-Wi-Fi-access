@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 
 const API_URL = '/api';
@@ -269,11 +269,29 @@ function CreateEventTab() {
 function ManageEventsTab() {
     const [lookupId, setLookupId] = useState('');
     const [event, setEvent] = useState<EventData | null>(null);
+    const [pbData, setPbData]   = useState<{ total: number; entries: any[] } | null>(null);
+    const [pbLoading, setPbLoading] = useState(false);
+    const [pbFilter, setPbFilter]   = useState('');
     const [loadedEventId, setLoadedEventId] = useState('');
     const [loadError, setLoadError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isAdjourning, setIsAdjourning] = useState(false);
     const [adjournMsg, setAdjournMsg] = useState('');
+
+    const fetchPhoneBook = async (filterEventId?: string) => {
+        setPbLoading(true);
+        try {
+            const url = filterEventId
+                ? `${API_URL}/admin/phone-book?eventId=${filterEventId}`
+                : `${API_URL}/admin/phone-book`;
+            const res  = await fetch(url);
+            const data = await res.json();
+            setPbData(data);
+        } catch { /* non-critical */ }
+        finally { setPbLoading(false); }
+    };
+
+    useEffect(() => { fetchPhoneBook(); }, []);
 
     const handleLookup = async () => {
         if (!lookupId.trim()) return;
@@ -395,6 +413,72 @@ function ManageEventsTab() {
                     <li><strong>Test OTP:</strong> Use <code className="bg-amber-100 px-1 rounded font-bold">123456</code> as a bypass OTP for testing.</li>
                 </ul>
             </div>
+
+            {/* Phone Book */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-800">Customer Phone Book</h2>
+                        <p className="text-sm text-slate-500">Verified numbers collected across all events — no duplicates</p>
+                    </div>
+                    {pbData && (
+                        <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-bold">
+                            {pbData.total} unique numbers
+                        </span>
+                    )}
+                </div>
+
+                <div className="flex gap-2 mb-4 flex-wrap">
+                    <input type="text" value={pbFilter} onChange={e => setPbFilter(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && fetchPhoneBook(pbFilter || undefined)}
+                        placeholder="Filter by Event ID (leave blank for all)"
+                        className="flex-1 min-w-48 px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm" />
+                    <button onClick={() => fetchPhoneBook(pbFilter || undefined)} disabled={pbLoading}
+                        className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-semibold text-sm hover:bg-emerald-700 transition disabled:opacity-60">
+                        {pbLoading ? 'Loading...' : 'Apply Filter'}
+                    </button>
+                    {pbFilter && (
+                        <button onClick={() => { setPbFilter(''); fetchPhoneBook(); }}
+                            className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-semibold text-sm hover:bg-slate-300 transition">
+                            Clear
+                        </button>
+                    )}
+                    <a href={`${API_URL}/admin/phone-book/export${pbFilter ? `?eventId=${pbFilter}` : ''}`}
+                        target="_blank" rel="noreferrer"
+                        className="px-4 py-2 bg-slate-700 text-white rounded-lg font-semibold text-sm hover:bg-slate-800 transition">
+                        📥 Export CSV
+                    </a>
+                </div>
+
+                {pbData && pbData.entries.length > 0 ? (
+                    <div className="overflow-y-auto max-h-96 space-y-2">
+                        {pbData.entries.map((entry: any) => (
+                            <div key={entry.phone} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl gap-3">
+                                <div className="min-w-0">
+                                    <p className="font-semibold text-slate-800 text-sm">{entry.phone}</p>
+                                    <p className="text-xs text-slate-400 mt-0.5">
+                                        First: {new Date(entry.firstSeen).toLocaleDateString()} &nbsp;·&nbsp;
+                                        Last: {new Date(entry.lastSeen).toLocaleDateString()}
+                                    </p>
+                                </div>
+                                <div className="flex flex-wrap gap-1 justify-end shrink-0">
+                                    {entry.events.map((ev: any) => (
+                                        <span key={ev.eventId + ev.timestamp}
+                                            className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs font-medium whitespace-nowrap">
+                                            {ev.eventId}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : pbData && pbData.entries.length === 0 ? (
+                    <p className="text-slate-400 text-sm text-center py-8">No numbers collected yet for this filter.</p>
+                ) : !pbLoading && (
+                    <p className="text-slate-400 text-sm text-center py-8">Loading phone book...</p>
+                )}
+            </div>
+
         </div>
     );
 }
