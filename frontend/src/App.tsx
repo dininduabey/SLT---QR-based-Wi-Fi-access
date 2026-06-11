@@ -132,6 +132,118 @@ const QrDisplayPage = () => {
 };
 
 // ---------------------------------------------------------
+// QrScanPage — camera-based QR scanner for event portal
+// ---------------------------------------------------------
+const QrScanPage = () => {
+    const videoRef  = React.useRef<HTMLVideoElement>(null);
+    const canvasRef = React.useRef<HTMLCanvasElement>(null);
+    const streamRef = React.useRef<MediaStream | null>(null);
+    const rafRef    = React.useRef<number>(0);
+    const [status, setStatus]   = useState<'loading'|'scanning'|'found'|'error'>('loading');
+
+    useEffect(() => {
+        const start = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
+                });
+                streamRef.current = stream;
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                    await videoRef.current.play();
+                    setStatus('scanning');
+                }
+            } catch {
+                setStatus('error');
+            }
+        };
+        start();
+        return () => {
+            cancelAnimationFrame(rafRef.current);
+            streamRef.current?.getTracks().forEach(t => t.stop());
+        };
+    }, []);
+
+    useEffect(() => {
+        if (status !== 'scanning') return;
+        let active = true;
+
+        const tick = async () => {
+            const video  = videoRef.current;
+            const canvas = canvasRef.current;
+            if (!video || !canvas || video.readyState < 2) {
+                if (active) rafRef.current = requestAnimationFrame(tick);
+                return;
+            }
+            canvas.width  = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            ctx.drawImage(video, 0, 0);
+            const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const jsQR  = (await import('jsqr')).default;
+            const result = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+            if (result?.data && result.data.includes('/portal/')) {
+                active = false;
+                setStatus('found');
+                streamRef.current?.getTracks().forEach(t => t.stop());
+                window.location.href = result.data;
+                return;
+            }
+            if (active) rafRef.current = requestAnimationFrame(tick);
+        };
+        rafRef.current = requestAnimationFrame(tick);
+        return () => { active = false; cancelAnimationFrame(rafRef.current); };
+    }, [status]);
+
+    const grad = 'linear-gradient(160deg,#003d2b,#00a86b)';
+
+    if (status === 'error' || !navigator.mediaDevices) return (
+        <div style={{ minHeight:'100vh', background:grad, display:'flex', alignItems:'center', justifyContent:'center', padding:'1.5rem' }}>
+            <div style={{ background:'white', borderRadius:'24px', padding:'2rem 1.5rem', maxWidth:'340px', width:'100%' }}>
+                <div style={{ fontSize:'40px', textAlign:'center', marginBottom:'1rem' }}>📷</div>
+                <h2 style={{ fontSize:'18px', fontWeight:700, marginBottom:'1rem', color:'#1a1a1a', textAlign:'center' }}>Scan the Event QR Code</h2>
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
+                    {[
+                        ['1', 'Tap ✕ (top-right) to close this screen'],
+                        ['2', 'Tap "Use without internet" if prompted'],
+                        ['3', 'Open your Camera app'],
+                        ['4', 'Point it at the QR code displayed at the event'],
+                        ['5', 'Tap the link that appears to connect'],
+                    ].map(([n, txt]) => (
+                        <div key={n} style={{ display:'flex', alignItems:'flex-start', gap:'0.75rem' }}>
+                            <span style={{ background:'#005c42', color:'white', borderRadius:'50%', width:'24px', height:'24px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, flexShrink:0, marginTop:'1px' }}>{n}</span>
+                            <span style={{ fontSize:'14px', color:'#444', lineHeight:1.5 }}>{txt}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+
+    if (status === 'found') return (
+        <div style={{ minHeight:'100vh', background:grad, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <p style={{ color:'white', fontSize:'18px', fontWeight:600 }}>QR code detected — opening...</p>
+        </div>
+    );
+
+    return (
+        <div style={{ minHeight:'100vh', background:'#000', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+            <p style={{ color:'white', fontSize:'15px', fontWeight:600, marginBottom:'1rem', textAlign:'center', padding:'0 1rem' }}>
+                {status === 'loading' ? 'Starting camera...' : 'Point at the event QR code'}
+            </p>
+            <div style={{ position:'relative', width:'min(90vw,400px)', aspectRatio:'1' }}>
+                <video ref={videoRef} playsInline muted
+                    style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'16px', display:'block' }} />
+                <div style={{ position:'absolute', inset:0, border:'3px solid #00a86b', borderRadius:'16px', pointerEvents:'none' }} />
+                <canvas ref={canvasRef} style={{ display:'none' }} />
+            </div>
+            <p style={{ color:'rgba(255,255,255,0.5)', fontSize:'13px', marginTop:'1rem' }}>Scanning automatically...</p>
+        </div>
+    );
+};
+
+// ---------------------------------------------------------
 // Auth helpers — token stored in sessionStorage so it clears
 // automatically when the browser tab is closed.
 // ---------------------------------------------------------
@@ -637,6 +749,7 @@ export default function App() {
                 <Route path="/portal/success" element={<SuccessPage />} />
                 <Route path="/portal/:eventId" element={<EventPortal />} />
                 <Route path="/qr-display/:eventId" element={<QrDisplayPage />} />
+                <Route path="/qr-scan"           element={<QrScanPage />} />
                 <Route path="/"               element={<ProtectedAdmin />} />
             </Routes>
         </Router>
