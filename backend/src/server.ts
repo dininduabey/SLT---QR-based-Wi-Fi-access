@@ -1757,6 +1757,49 @@ app.get('/portal/active', async (req: Request, res: Response) => {
 });
 
 
+// POST /internal/radius-acct — called by FreeRADIUS accounting exec
+app.post('/internal/radius-acct', async (req: Request, res: Response) => {
+    try {
+        const { mac: rawMac, sessionId, inOctets, outOctets } = req.body;
+        if (!rawMac) return res.json({ ok: false });
+
+        const raw = rawMac.toLowerCase().replace(/[:\-\.]/g, '');
+        const mac = (raw.match(/.{2}/g) || []).join(':');
+        if (!mac) return res.json({ ok: false });
+
+        const totalOcts = (Number(inOctets) || 0) + (Number(outOctets) || 0);
+        const token = await DataTokenModel.findOne(
+            { macAddress: mac },
+            null, { sort: { createdAt: -1 } }
+        );
+        if (!token) return res.json({ ok: false, reason: 'no token for mac' });
+
+        const sessions = token.acctSessions as any[];
+        const idx = sessions.findIndex((s: any) => s.sessionId === sessionId);
+        if (idx >= 0) { sessions[idx].octets = totalOcts; }
+        else { sessions.push({ sessionId, octets: totalOcts }); }
+
+        const totalUsedMb = sessions.reduce(
+            (sum: number, s: any) => sum + (s.octets || 0), 0) / 1048576;
+        const newStatus = totalUsedMb >= token.dataLimitMb ? 'exhausted' : 'active';
+
+        await DataTokenModel.updateOne({ _id: token._id }, {
+            $set: { acctSessions: sessions, dataUsedMb: totalUsedMb, status: newStatus }
+        });
+
+        if (newStatus === 'exhausted' && token.status === 'active') {
+            console.log(`[ACCT] ${mac} EXHAUSTED (${totalUsedMb.toFixed(1)}MB)`);
+        } else {
+            console.log(`[ACCT] ${mac} used=${totalUsedMb.toFixed(1)}MB status=${newStatus}`);
+        }
+        return res.json({ ok: true, totalUsedMb, status: newStatus });
+    } catch (err: any) {
+        console.error('[ACCT] error:', err);
+        return res.json({ ok: false });
+    }
+});
+
+
 app.listen(PORT, () => {
     console.log(`SLT Wi-Fi Auth API on port ${PORT}`);
     console.log(`pfSense: ${process.env.PFSENSE_HOST || '(mock)'}`);

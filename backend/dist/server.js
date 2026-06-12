@@ -1590,6 +1590,46 @@ app.get('/portal/active', (req, res) => __awaiter(void 0, void 0, void 0, functi
         return res.redirect('http://124.43.216.136:45080/');
     }
 }));
+// POST /internal/radius-acct — called by FreeRADIUS accounting exec
+app.post('/internal/radius-acct', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { mac: rawMac, sessionId, inOctets, outOctets } = req.body;
+        if (!rawMac)
+            return res.json({ ok: false });
+        const raw = rawMac.toLowerCase().replace(/[:\-\.]/g, '');
+        const mac = (raw.match(/.{2}/g) || []).join(':');
+        if (!mac)
+            return res.json({ ok: false });
+        const totalOcts = (Number(inOctets) || 0) + (Number(outOctets) || 0);
+        const token = yield models_2.DataTokenModel.findOne({ macAddress: mac }, null, { sort: { createdAt: -1 } });
+        if (!token)
+            return res.json({ ok: false, reason: 'no token for mac' });
+        const sessions = token.acctSessions;
+        const idx = sessions.findIndex((s) => s.sessionId === sessionId);
+        if (idx >= 0) {
+            sessions[idx].octets = totalOcts;
+        }
+        else {
+            sessions.push({ sessionId, octets: totalOcts });
+        }
+        const totalUsedMb = sessions.reduce((sum, s) => sum + (s.octets || 0), 0) / 1048576;
+        const newStatus = totalUsedMb >= token.dataLimitMb ? 'exhausted' : 'active';
+        yield models_2.DataTokenModel.updateOne({ _id: token._id }, {
+            $set: { acctSessions: sessions, dataUsedMb: totalUsedMb, status: newStatus }
+        });
+        if (newStatus === 'exhausted' && token.status === 'active') {
+            console.log(`[ACCT] ${mac} EXHAUSTED (${totalUsedMb.toFixed(1)}MB)`);
+        }
+        else {
+            console.log(`[ACCT] ${mac} used=${totalUsedMb.toFixed(1)}MB status=${newStatus}`);
+        }
+        return res.json({ ok: true, totalUsedMb, status: newStatus });
+    }
+    catch (err) {
+        console.error('[ACCT] error:', err);
+        return res.json({ ok: false });
+    }
+}));
 app.listen(PORT, () => {
     console.log(`SLT Wi-Fi Auth API on port ${PORT}`);
     console.log(`pfSense: ${process.env.PFSENSE_HOST || '(mock)'}`);
