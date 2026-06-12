@@ -29,6 +29,32 @@ export function makeTokenPassword(tokenId: string): string {
         .update(tokenId).digest('hex').slice(0, 32);
 }
 
+// Normalise any MAC format → aa:bb:cc:dd:ee:ff
+function normalizeMac(input: string): string {
+    const clean = (input || '').toLowerCase().replace(/[:\-\. ]/g, '');
+    if (clean.length === 12 && /^[0-9a-f]+$/.test(clean)) {
+        return clean.match(/.{2}/g)!.join(':');
+    }
+    return (input || '').toLowerCase();
+}
+
+// True if the string looks like a MAC address
+function isMacAddress(s: string): boolean {
+    return /^([0-9a-f]{2}[:\-]){5}[0-9a-f]{2}$/i.test(s) ||
+           /^[0-9a-f]{12}$/i.test(s);
+}
+
+// Build pfSense-Max-Total-Octets VSA buffer
+function makeQuotaAttrs(bytes: number): any[] {
+    const vsaBuf    = Buffer.allocUnsafe(6);
+    vsaBuf.writeUInt8(3, 0);
+    vsaBuf.writeUInt8(6, 1);
+    vsaBuf.writeUInt32BE(bytes, 2);
+    const vendorBuf = Buffer.allocUnsafe(4);
+    vendorBuf.writeUInt32BE(13644, 0);
+    return [['Vendor-Specific', Buffer.concat([vendorBuf, vsaBuf])]];
+}
+
 export function startRadiusServers() {
 
     // ── Auth server (UDP 1812) ─────────────────────────────────────
@@ -36,41 +62,61 @@ export function startRadiusServers() {
 
     authSock.on('message', async (msg: Buffer, rinfo: dgram.RemoteInfo) => {
         try {
-            const packet = radius.decode({ packet: msg, secret: RADIUS_SECRET });
+            const packet   = radius.decode({ packet: msg, secret: RADIUS_SECRET });
             if (packet.code !== 'Access-Request') return;
 
-            const tokenId  = (packet.attributes['User-Name']         as string) || '';
+            const userName = (packet.attributes['User-Name']         as string) || '';
             const password = (packet.attributes['User-Password']      as string) || '';
-            const mac      = (packet.attributes['Calling-Station-Id'] as string || '').toLowerCase();
-
-            const token = await DataTokenModel.findOne({ tokenId });
+            const callingMac = normalizeMac(
+                (packet.attributes['Calling-Station-Id'] as string) || ''
+            );
 
             let code  = 'Access-Reject';
             let attrs: any[] = [];
 
-            if (token && token.status === 'active') {
-                const expectedPw = makeTokenPassword(tokenId);
-                if (password === expectedPw) {
+            if (isMacAddress(userName)) {
+                // ── RADIUS MAC Authentication ──────────────────────
+                const mac   = normalizeMac(userName);
+                const token = await DataTokenModel.findOne(
+                    { macAddress: mac, status: 'active' },
+                    null,
+                    { sort: { createdAt: -1 } }
+                );
+                if (token) {
                     const remainBytes = Math.max(0,
                         Math.floor((token.dataLimitMb - token.dataUsedMb) * 1048576));
                     code  = 'Access-Accept';
-                    // Construct pfSense VSA manually (Vendor 13644, Attr 3, uint32 BE)
-                    const vsaBuf = Buffer.allocUnsafe(6);
-                    vsaBuf.writeUInt8(3, 0);          // vendor attribute type
-                    vsaBuf.writeUInt8(6, 1);          // length (2 header + 4 value)
-                    vsaBuf.writeUInt32BE(remainBytes, 2); // value in bytes
-                    const vendorBuf = Buffer.allocUnsafe(4);
-                    vendorBuf.writeUInt32BE(13644, 0); // pfSense vendor ID
-                    attrs = [['Vendor-Specific', Buffer.concat([vendorBuf, vsaBuf])]];
-                    if (!token.macAddress) {
-                        await DataTokenModel.updateOne({ tokenId }, { $set: { macAddress: mac } });
-                    }
-                    console.log(`[RADIUS-AUTH] ACCEPT ${tokenId} remaining=${(remainBytes/1048576).toFixed(1)}MB`);
+                    attrs = makeQuotaAttrs(remainBytes);
+                    console.log(`[RADIUS-AUTH] MAC-ACCEPT ${mac} token=${token.tokenId} remaining=${(remainBytes/1048576).toFixed(1)}MB`);
                 } else {
-                    console.log(`[RADIUS-AUTH] REJECT ${tokenId} bad password`);
+                    console.log(`[RADIUS-AUTH] MAC-REJECT ${mac} (no active token)`);
                 }
+
             } else {
-                console.log(`[RADIUS-AUTH] REJECT ${tokenId} status=${token?.status || 'not found'}`);
+                // ── TokenId / HMAC credential auth (form submit) ───
+                const tokenId = userName;
+                const token   = await DataTokenModel.findOne({ tokenId });
+                if (token && token.status === 'active') {
+                    const expectedPw = makeTokenPassword(tokenId);
+                    if (password === expectedPw) {
+                        const remainBytes = Math.max(0,
+                            Math.floor((token.dataLimitMb - token.dataUsedMb) * 1048576));
+                        code  = 'Access-Accept';
+                        attrs = makeQuotaAttrs(remainBytes);
+                        // Persist MAC if not yet set
+                        if (callingMac && !token.macAddress) {
+                            await DataTokenModel.updateOne(
+                                { tokenId },
+                                { $set: { macAddress: callingMac } }
+                            );
+                        }
+                        console.log(`[RADIUS-AUTH] TOKEN-ACCEPT ${tokenId} remaining=${(remainBytes/1048576).toFixed(1)}MB`);
+                    } else {
+                        console.log(`[RADIUS-AUTH] TOKEN-REJECT ${tokenId} bad password`);
+                    }
+                } else {
+                    console.log(`[RADIUS-AUTH] TOKEN-REJECT ${tokenId} status=${token?.status || 'not found'}`);
+                }
             }
 
             const response = radius.encode_response({
@@ -93,15 +139,25 @@ export function startRadiusServers() {
             const packet     = radius.decode({ packet: msg, secret: RADIUS_SECRET });
             if (packet.code !== 'Accounting-Request') return;
 
-            const tokenId    = (packet.attributes['User-Name']           as string) || '';
-            const statusType = (packet.attributes['Acct-Status-Type']    as string) || '';
-            const sessionId  = (packet.attributes['Acct-Session-Id']     as string) || '';
-            const inOctets   = (packet.attributes['Acct-Input-Octets']   as number) || 0;
-            const outOctets  = (packet.attributes['Acct-Output-Octets']  as number) || 0;
+            const statusType = (packet.attributes['Acct-Status-Type']   as string) || '';
+            const sessionId  = (packet.attributes['Acct-Session-Id']    as string) || '';
+            const inOctets   = (packet.attributes['Acct-Input-Octets']  as number) || 0;
+            const outOctets  = (packet.attributes['Acct-Output-Octets'] as number) || 0;
             const totalOcts  = inOctets + outOctets;
 
+            // Identify token by Calling-Station-Id (MAC) — works for both auth modes
+            const callingMac = normalizeMac(
+                (packet.attributes['Calling-Station-Id'] as string) || ''
+            );
+            const userName   = (packet.attributes['User-Name'] as string) || '';
+            const lookupMac  = callingMac || normalizeMac(userName);
+
             if (statusType === 'Interim-Update' || statusType === 'Stop') {
-                const token = await DataTokenModel.findOne({ tokenId });
+                const token = await DataTokenModel.findOne(
+                    { macAddress: lookupMac },
+                    null,
+                    { sort: { createdAt: -1 } }
+                );
                 if (token) {
                     const sessions = token.acctSessions as any[];
                     const idx = sessions.findIndex((s: any) => s.sessionId === sessionId);
@@ -112,12 +168,12 @@ export function startRadiusServers() {
                         (sum: number, s: any) => sum + (s.octets || 0), 0) / 1048576;
                     const newStatus   = totalUsedMb >= token.dataLimitMb ? 'exhausted' : 'active';
 
-                    await DataTokenModel.updateOne({ tokenId }, {
+                    await DataTokenModel.updateOne({ _id: token._id }, {
                         $set: { acctSessions: sessions, dataUsedMb: totalUsedMb, status: newStatus }
                     });
 
                     if (newStatus === 'exhausted' && token.status === 'active') {
-                        console.log(`[RADIUS-ACCT] ${tokenId} EXHAUSTED (${totalUsedMb.toFixed(1)}MB)`);
+                        console.log(`[RADIUS-ACCT] ${lookupMac} EXHAUSTED (${totalUsedMb.toFixed(1)}MB)`);
                     }
                 }
             }

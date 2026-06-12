@@ -1133,12 +1133,18 @@ app.post('/verify-otp', (req, res) => __awaiter(void 0, void 0, void 0, function
                     tokenId: (0, uuid_1.v4)(),
                     eventId: ev.eventId,
                     phone: mobile,
+                    macAddress: mac !== 'unknown' ? mac.toLowerCase() : '',
                     dataLimitMb: ev.policies.dataLimitMb,
                     topupCount: dt ? dt.topupCount : 0,
                 });
                 console.log(`[VERIFY-OTP] DataToken created ${dt.tokenId} limit=${ev.policies.dataLimitMb}MB`);
             }
             else {
+                // Update MAC if not yet stored
+                if (!dt.macAddress && mac !== 'unknown') {
+                    yield models_2.DataTokenModel.updateOne({ tokenId: dt.tokenId }, { $set: { macAddress: mac.toLowerCase() } });
+                    dt.macAddress = mac.toLowerCase();
+                }
                 console.log(`[VERIFY-OTP] DataToken reused ${dt.tokenId} used=${dt.dataUsedMb.toFixed(1)}MB`);
             }
             radiusUser = dt.tokenId;
@@ -1521,6 +1527,55 @@ app.post('/admin/topup-requests/:requestId/reject', (req, res) => __awaiter(void
     }
     catch (err) {
         res.status(500).json({ success: false, message: 'Server error' });
+    }
+}));
+// ── Internal RADIUS check endpoint (called by FreeRADIUS exec module) ──
+// POST /internal/radius-check  { mac: "aa:bb:cc:dd:ee:ff" }
+// Returns 200 { accept: true, quotaBytes: N } or 200 { accept: false }
+app.post('/internal/radius-check', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { mac: rawMac, tokenId, password, callingMac } = req.body;
+        if (rawMac) {
+            // ── MAC auth ──────────────────────────────────────────────
+            const raw = rawMac.toLowerCase().replace(/[:\-\.]/g, '');
+            const mac = (raw.match(/.{2}/g) || []).join(':');
+            if (!mac)
+                return res.json({ accept: false, reason: 'no mac' });
+            const token = yield models_2.DataTokenModel.findOne({ macAddress: mac, status: 'active' }, null, { sort: { createdAt: -1 } });
+            if (!token)
+                return res.json({ accept: false, reason: 'no active token' });
+            const quotaBytes = Math.max(0, Math.floor((token.dataLimitMb - token.dataUsedMb) * 1048576));
+            console.log(`[RADIUS-CHECK] MAC-ACCEPT mac=${mac} remaining=${(quotaBytes / 1048576).toFixed(1)}MB`);
+            return res.json({ accept: true, quotaBytes, tokenId: token.tokenId });
+        }
+        else if (tokenId) {
+            // ── TokenId/HMAC form auth ────────────────────────────────
+            const token = yield models_2.DataTokenModel.findOne({ tokenId, status: 'active' });
+            if (!token)
+                return res.json({ accept: false, reason: 'no active token' });
+            const expectedPw = (0, radiusServer_1.makeTokenPassword)(tokenId);
+            if (password !== expectedPw)
+                return res.json({ accept: false, reason: 'invalid password' });
+            // Store Calling-Station-Id MAC if not yet set
+            if (callingMac && !token.macAddress) {
+                const raw = callingMac.toLowerCase().replace(/[:\-\.]/g, '');
+                const mac = (raw.match(/.{2}/g) || []).join(':');
+                if (mac) {
+                    yield models_2.DataTokenModel.updateOne({ tokenId }, { $set: { macAddress: mac } });
+                    console.log(`[RADIUS-CHECK] MAC stored from Calling-Station-Id: ${mac}`);
+                }
+            }
+            const quotaBytes = Math.max(0, Math.floor((token.dataLimitMb - token.dataUsedMb) * 1048576));
+            console.log(`[RADIUS-CHECK] TOKEN-ACCEPT tokenId=${tokenId}`);
+            return res.json({ accept: true, quotaBytes, tokenId });
+        }
+        else {
+            return res.json({ accept: false, reason: 'no credentials' });
+        }
+    }
+    catch (err) {
+        console.error('[RADIUS-CHECK] error:', err);
+        return res.json({ accept: false, reason: 'error' });
     }
 }));
 app.listen(PORT, () => {
