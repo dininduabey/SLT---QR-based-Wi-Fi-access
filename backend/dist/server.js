@@ -1578,6 +1578,18 @@ app.post('/internal/radius-check', (req, res) => __awaiter(void 0, void 0, void 
         return res.json({ accept: false, reason: 'error' });
     }
 }));
+// GET /portal/active — redirect to current active event portal
+app.get('/portal/active', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const ev = yield models_1.EventModel.findOne({ status: 'active' }, {}, { sort: { createdAt: -1 } });
+        if (!ev)
+            return res.redirect('http://124.43.216.136:45080/');
+        return res.redirect(`http://124.43.216.136:45080/portal/${ev.eventId}`);
+    }
+    catch (_a) {
+        return res.redirect('http://124.43.216.136:45080/');
+    }
+}));
 app.listen(PORT, () => {
     console.log(`SLT Wi-Fi Auth API on port ${PORT}`);
     console.log(`pfSense: ${process.env.PFSENSE_HOST || '(mock)'}`);
