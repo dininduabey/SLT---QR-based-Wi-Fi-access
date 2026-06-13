@@ -1602,8 +1602,16 @@ app.post('/internal/radius-acct', (req, res) => __awaiter(void 0, void 0, void 0
             return res.json({ ok: false });
         const totalOcts = (Number(inOctets) || 0) + (Number(outOctets) || 0);
         const token = yield models_2.DataTokenModel.findOne({ macAddress: mac }, null, { sort: { createdAt: -1 } });
-        if (!token)
+        if (!token) {
+            // Try to find token without MAC (first accounting packet) and store the MAC
+            const tokenNoMac = yield models_2.DataTokenModel.findOne({ macAddress: '', status: 'active' }, null, { sort: { createdAt: -1 } });
+            if (tokenNoMac) {
+                yield models_2.DataTokenModel.updateOne({ _id: tokenNoMac._id }, { $set: { macAddress: mac } });
+                console.log(`[ACCT] MAC stored for token ${tokenNoMac.tokenId}: ${mac}`);
+                return res.json({ ok: true, stored: true });
+            }
             return res.json({ ok: false, reason: 'no token for mac' });
+        }
         const sessions = token.acctSessions;
         const idx = sessions.findIndex((s) => s.sessionId === sessionId);
         if (idx >= 0) {

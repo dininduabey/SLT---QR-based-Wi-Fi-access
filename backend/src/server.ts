@@ -1772,7 +1772,22 @@ app.post('/internal/radius-acct', async (req: Request, res: Response) => {
             { macAddress: mac },
             null, { sort: { createdAt: -1 } }
         );
-        if (!token) return res.json({ ok: false, reason: 'no token for mac' });
+        if (!token) {
+            // Try to find token without MAC (first accounting packet) and store the MAC
+            const tokenNoMac = await DataTokenModel.findOne(
+                { macAddress: '', status: 'active' },
+                null, { sort: { createdAt: -1 } }
+            );
+            if (tokenNoMac) {
+                await DataTokenModel.updateOne(
+                    { _id: tokenNoMac._id },
+                    { $set: { macAddress: mac } }
+                );
+                console.log(`[ACCT] MAC stored for token ${tokenNoMac.tokenId}: ${mac}`);
+                return res.json({ ok: true, stored: true });
+            }
+            return res.json({ ok: false, reason: 'no token for mac' });
+        }
 
         const sessions = token.acctSessions as any[];
         const idx = sessions.findIndex((s: any) => s.sessionId === sessionId);
