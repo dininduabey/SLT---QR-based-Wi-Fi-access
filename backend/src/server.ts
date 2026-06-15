@@ -1145,7 +1145,14 @@ app.post('/request-otp', async (req: Request, res: Response): Promise<any> => {
             const existingToken = await DataTokenModel.findOne(
                 { eventId, phone: mobile }, null, { sort: { createdAt: -1 } }
             );
-            if (existingToken && existingToken.status === 'exhausted') {
+            // Treat as exhausted if the newest token is exhausted OR its usage
+            // has reached the limit (pfSense may have disconnected before the
+            // status flipped). This ensures the top-up page shows reliably.
+            const isExhausted = existingToken && (
+                existingToken.status === 'exhausted' ||
+                existingToken.dataUsedMb >= existingToken.dataLimitMb
+            );
+            if (isExhausted) {
                 const topupLimit = ev.policies.topupLimitPerUser ?? null;
                 const canRequest = topupLimit === null || existingToken.topupCount < topupLimit;
                 const pending    = await DataRequestModel.findOne(
@@ -1310,12 +1317,10 @@ h2{color:#005c42;font-size:20px;margin:0 0 8px}p{color:#888;font-size:13px}
 <p>Please wait a moment.</p>
 <div class="skip">Taking too long? <a href="http://124.43.216.136:45080/portal/success">Tap here</a></div>
 </div>
-<form id="f" method="POST" action="${effective}">
+<form id="f" method="POST" action="http://172.31.98.1:8002/index.php?zone=main_zone&redirurl=${encodeURIComponent('http://124.43.216.136:45080/portal/success')}">
   <input type="hidden" name="redirurl" value="http://124.43.216.136:45080/portal/success">
   <input type="hidden" name="zone"     value="main_zone">
   <input type="hidden" name="accept"   value="Continue">
-  ${radiusUser ? `<input type="hidden" name="user"     value="${radiusUser}">` : ''}
-  ${radiusPass ? `<input type="hidden" name="password" value="${radiusPass}">` : ''}
 </form>
 <script>setTimeout(function(){ document.getElementById('f').submit(); }, 1500);</script>
 </body></html>`);
@@ -1364,14 +1369,15 @@ app.get('/admin/pfsense-event-policy', async (_req: Request, res: Response) => {
         const activeEvent = await EventModel.findOne(
             { status: 'active' }, {}, { sort: { createdAt: -1 } }
         );
-        if (!activeEvent || !activeEvent.policies?.sessionDurationMinutes) {
-            return res.json({ sessionDurationMinutes: 0 });
+        if (!activeEvent) {
+            return res.json({ sessionDurationMinutes: 0, dataLimitMb: 0 });
         }
         return res.json({
-            sessionDurationMinutes: activeEvent.policies.sessionDurationMinutes
+            sessionDurationMinutes: activeEvent.policies?.sessionDurationMinutes || 0,
+            dataLimitMb: activeEvent.policies?.dataLimitMb || 0
         });
     } catch {
-        return res.json({ sessionDurationMinutes: 0 });
+        return res.json({ sessionDurationMinutes: 0, dataLimitMb: 0 });
     }
 });
 
@@ -1768,15 +1774,36 @@ app.post('/internal/radius-acct', async (req: Request, res: Response) => {
         if (!mac) return res.json({ ok: false });
 
         const totalOcts = (Number(inOctets) || 0) + (Number(outOctets) || 0);
-        const token = await DataTokenModel.findOne(
-            { macAddress: mac },
+        // Only match tokens for the ACTIVE event — a phone's MAC may be bound
+        // to old tokens from previous events; usage must land on the current one.
+        const activeEvent = await EventModel.findOne(
+            { status: 'active' }, {}, { sort: { createdAt: -1 } }
+        );
+        if (!activeEvent) return res.json({ ok: false, reason: 'no active event' });
+        let token = await DataTokenModel.findOne(
+            { macAddress: mac, eventId: activeEvent.eventId, status: 'active' },
             null, { sort: { createdAt: -1 } }
         );
+        // If no active token has this MAC, but a newer active empty-MAC token
+        // exists (e.g. after a top-up), bind the MAC to it and move on.
         if (!token) {
-            // Try to find token without MAC (first accounting packet) and store the MAC
+            const freshTopup = await DataTokenModel.findOne(
+                { macAddress: '', eventId: activeEvent.eventId, status: 'active' },
+                null, { sort: { createdAt: 1 } }  // FIFO: oldest unbound first
+            );
+            if (freshTopup) {
+                await DataTokenModel.updateOne(
+                    { _id: freshTopup._id }, { $set: { macAddress: mac } }
+                );
+                token = await DataTokenModel.findOne({ _id: freshTopup._id });
+            }
+        }
+        if (!token) {
+            // First accounting packet for this phone in this event — find the
+            // empty-MAC token for the active event and bind this MAC to it.
             const tokenNoMac = await DataTokenModel.findOne(
-                { macAddress: '', status: 'active' },
-                null, { sort: { createdAt: -1 } }
+                { macAddress: '', status: 'active', eventId: activeEvent.eventId },
+                null, { sort: { createdAt: 1 } }  // FIFO: oldest unbound first
             );
             if (tokenNoMac) {
                 await DataTokenModel.updateOne(
@@ -1784,10 +1811,13 @@ app.post('/internal/radius-acct', async (req: Request, res: Response) => {
                     { $set: { macAddress: mac } }
                 );
                 console.log(`[ACCT] MAC stored for token ${tokenNoMac.tokenId}: ${mac}`);
-                return res.json({ ok: true, stored: true });
+                // Re-fetch with the MAC now set so we also record this packet's usage
+                token = await DataTokenModel.findOne({ _id: tokenNoMac._id });
+            } else {
+                return res.json({ ok: false, reason: 'no token for mac' });
             }
-            return res.json({ ok: false, reason: 'no token for mac' });
         }
+        if (!token) return res.json({ ok: false, reason: 'no token' });
 
         const sessions = token.acctSessions as any[];
         const idx = sessions.findIndex((s: any) => s.sessionId === sessionId);
@@ -1811,6 +1841,29 @@ app.post('/internal/radius-acct', async (req: Request, res: Response) => {
     } catch (err: any) {
         console.error('[ACCT] error:', err);
         return res.json({ ok: false });
+    }
+});
+
+
+// GET /admin/token-bindings/:eventId — diagnostic: shows MAC↔token↔usage live
+app.get('/admin/token-bindings/:eventId', async (req: Request, res: Response) => {
+    try {
+        const tokens = await DataTokenModel.find(
+            { eventId: req.params.eventId }, null, { sort: { createdAt: 1 } }
+        );
+        const rows = tokens.map((t: any) => ({
+            tokenId:    t.tokenId.slice(0, 8),
+            phone:      t.phone,
+            mac:        t.macAddress || '(unbound)',
+            usedMb:     parseFloat((t.dataUsedMb || 0).toFixed(2)),
+            limitMb:    t.dataLimitMb,
+            topupCount: t.topupCount,
+            status:     t.status,
+            created:    t.createdAt
+        }));
+        return res.json({ success: true, count: rows.length, bindings: rows });
+    } catch (err: any) {
+        return res.json({ success: false, error: err.message });
     }
 });
 

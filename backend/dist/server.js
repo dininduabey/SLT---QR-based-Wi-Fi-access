@@ -1030,7 +1030,12 @@ app.post('/request-otp', (req, res) => __awaiter(void 0, void 0, void 0, functio
         // ── DATA LIMIT CHECK ────────────────────────────────────────────
         if ((_a = ev.policies) === null || _a === void 0 ? void 0 : _a.dataLimitMb) {
             const existingToken = yield models_2.DataTokenModel.findOne({ eventId, phone: mobile }, null, { sort: { createdAt: -1 } });
-            if (existingToken && existingToken.status === 'exhausted') {
+            // Treat as exhausted if the newest token is exhausted OR its usage
+            // has reached the limit (pfSense may have disconnected before the
+            // status flipped). This ensures the top-up page shows reliably.
+            const isExhausted = existingToken && (existingToken.status === 'exhausted' ||
+                existingToken.dataUsedMb >= existingToken.dataLimitMb);
+            if (isExhausted) {
                 const topupLimit = (_b = ev.policies.topupLimitPerUser) !== null && _b !== void 0 ? _b : null;
                 const canRequest = topupLimit === null || existingToken.topupCount < topupLimit;
                 const pending = yield models_2.DataRequestModel.findOne({ eventId, phone: mobile, status: 'pending' });
@@ -1168,12 +1173,10 @@ h2{color:#005c42;font-size:20px;margin:0 0 8px}p{color:#888;font-size:13px}
 <p>Please wait a moment.</p>
 <div class="skip">Taking too long? <a href="http://124.43.216.136:45080/portal/success">Tap here</a></div>
 </div>
-<form id="f" method="POST" action="${effective}">
+<form id="f" method="POST" action="http://172.31.98.1:8002/index.php?zone=main_zone&redirurl=${encodeURIComponent('http://124.43.216.136:45080/portal/success')}">
   <input type="hidden" name="redirurl" value="http://124.43.216.136:45080/portal/success">
   <input type="hidden" name="zone"     value="main_zone">
   <input type="hidden" name="accept"   value="Continue">
-  ${radiusUser ? `<input type="hidden" name="user"     value="${radiusUser}">` : ''}
-  ${radiusPass ? `<input type="hidden" name="password" value="${radiusPass}">` : ''}
 </form>
 <script>setTimeout(function(){ document.getElementById('f').submit(); }, 1500);</script>
 </body></html>`);
@@ -1214,18 +1217,19 @@ app.get('/admin/pfsense-poll', (_req, res) => {
 // Returns the active event's session duration so the poller can
 // disconnect clients whose sessions have expired.
 app.get('/admin/pfsense-event-policy', (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b;
     try {
         const activeEvent = yield models_1.EventModel.findOne({ status: 'active' }, {}, { sort: { createdAt: -1 } });
-        if (!activeEvent || !((_a = activeEvent.policies) === null || _a === void 0 ? void 0 : _a.sessionDurationMinutes)) {
-            return res.json({ sessionDurationMinutes: 0 });
+        if (!activeEvent) {
+            return res.json({ sessionDurationMinutes: 0, dataLimitMb: 0 });
         }
         return res.json({
-            sessionDurationMinutes: activeEvent.policies.sessionDurationMinutes
+            sessionDurationMinutes: ((_a = activeEvent.policies) === null || _a === void 0 ? void 0 : _a.sessionDurationMinutes) || 0,
+            dataLimitMb: ((_b = activeEvent.policies) === null || _b === void 0 ? void 0 : _b.dataLimitMb) || 0
         });
     }
-    catch (_b) {
-        return res.json({ sessionDurationMinutes: 0 });
+    catch (_c) {
+        return res.json({ sessionDurationMinutes: 0, dataLimitMb: 0 });
     }
 }));
 // ==================================================================
@@ -1601,17 +1605,39 @@ app.post('/internal/radius-acct', (req, res) => __awaiter(void 0, void 0, void 0
         if (!mac)
             return res.json({ ok: false });
         const totalOcts = (Number(inOctets) || 0) + (Number(outOctets) || 0);
-        const token = yield models_2.DataTokenModel.findOne({ macAddress: mac }, null, { sort: { createdAt: -1 } });
+        // Only match tokens for the ACTIVE event — a phone's MAC may be bound
+        // to old tokens from previous events; usage must land on the current one.
+        const activeEvent = yield models_1.EventModel.findOne({ status: 'active' }, {}, { sort: { createdAt: -1 } });
+        if (!activeEvent)
+            return res.json({ ok: false, reason: 'no active event' });
+        let token = yield models_2.DataTokenModel.findOne({ macAddress: mac, eventId: activeEvent.eventId, status: 'active' }, null, { sort: { createdAt: -1 } });
+        // If no active token has this MAC, but a newer active empty-MAC token
+        // exists (e.g. after a top-up), bind the MAC to it and move on.
         if (!token) {
-            // Try to find token without MAC (first accounting packet) and store the MAC
-            const tokenNoMac = yield models_2.DataTokenModel.findOne({ macAddress: '', status: 'active' }, null, { sort: { createdAt: -1 } });
+            const freshTopup = yield models_2.DataTokenModel.findOne({ macAddress: '', eventId: activeEvent.eventId, status: 'active' }, null, { sort: { createdAt: 1 } } // FIFO: oldest unbound first
+            );
+            if (freshTopup) {
+                yield models_2.DataTokenModel.updateOne({ _id: freshTopup._id }, { $set: { macAddress: mac } });
+                token = yield models_2.DataTokenModel.findOne({ _id: freshTopup._id });
+            }
+        }
+        if (!token) {
+            // First accounting packet for this phone in this event — find the
+            // empty-MAC token for the active event and bind this MAC to it.
+            const tokenNoMac = yield models_2.DataTokenModel.findOne({ macAddress: '', status: 'active', eventId: activeEvent.eventId }, null, { sort: { createdAt: 1 } } // FIFO: oldest unbound first
+            );
             if (tokenNoMac) {
                 yield models_2.DataTokenModel.updateOne({ _id: tokenNoMac._id }, { $set: { macAddress: mac } });
                 console.log(`[ACCT] MAC stored for token ${tokenNoMac.tokenId}: ${mac}`);
-                return res.json({ ok: true, stored: true });
+                // Re-fetch with the MAC now set so we also record this packet's usage
+                token = yield models_2.DataTokenModel.findOne({ _id: tokenNoMac._id });
             }
-            return res.json({ ok: false, reason: 'no token for mac' });
+            else {
+                return res.json({ ok: false, reason: 'no token for mac' });
+            }
         }
+        if (!token)
+            return res.json({ ok: false, reason: 'no token' });
         const sessions = token.acctSessions;
         const idx = sessions.findIndex((s) => s.sessionId === sessionId);
         if (idx >= 0) {
@@ -1636,6 +1662,26 @@ app.post('/internal/radius-acct', (req, res) => __awaiter(void 0, void 0, void 0
     catch (err) {
         console.error('[ACCT] error:', err);
         return res.json({ ok: false });
+    }
+}));
+// GET /admin/token-bindings/:eventId — diagnostic: shows MAC↔token↔usage live
+app.get('/admin/token-bindings/:eventId', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const tokens = yield models_2.DataTokenModel.find({ eventId: req.params.eventId }, null, { sort: { createdAt: 1 } });
+        const rows = tokens.map((t) => ({
+            tokenId: t.tokenId.slice(0, 8),
+            phone: t.phone,
+            mac: t.macAddress || '(unbound)',
+            usedMb: parseFloat((t.dataUsedMb || 0).toFixed(2)),
+            limitMb: t.dataLimitMb,
+            topupCount: t.topupCount,
+            status: t.status,
+            created: t.createdAt
+        }));
+        return res.json({ success: true, count: rows.length, bindings: rows });
+    }
+    catch (err) {
+        return res.json({ success: false, error: err.message });
     }
 }));
 app.listen(PORT, () => {

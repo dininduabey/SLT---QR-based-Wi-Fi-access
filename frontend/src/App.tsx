@@ -809,6 +809,16 @@ function DataExhaustedPage() {
         return () => clearInterval(iv);
     }, [screen, requestId]);
 
+    // When approved, auto-submit the pfSense access form to restore internet
+    useEffect(() => {
+        if (screen !== 'approved') return;
+        const t = setTimeout(() => {
+            const f = document.getElementById('resumeForm') as HTMLFormElement | null;
+            if (f) f.submit();
+        }, 2000);
+        return () => clearTimeout(t);
+    }, [screen]);
+
     const handleRequest = async () => {
         setBusy(true);
         try {
@@ -905,14 +915,18 @@ function DataExhaustedPage() {
                 <div style={{fontSize:56,marginBottom:8}}>✅</div>
                 <h2 style={{color:'#005c42',margin:'0 0 12px'}}>Top-Up Approved!</h2>
                 <p style={{color:'#555'}}>{adminMsg}</p>
-                <div style={{background:'#f0faf5',borderRadius:10,padding:'16px',marginTop:16,textAlign:'left'}}>
-                    <p style={{margin:0,fontWeight:700,marginBottom:6}}>To reconnect:</p>
-                    <ol style={{margin:0,paddingLeft:20,color:'#444',lineHeight:1.8}}>
-                        <li>Turn Wi-Fi off, then on</li>
-                        <li>Reconnect to <strong>SLT WiFi</strong></li>
-                        <li>Scan the QR code again</li>
-                    </ol>
-                </div>
+                <p style={{color:'#888',fontSize:14,marginTop:16}}>Restoring your connection…</p>
+                <div style={{margin:'20px auto',width:40,height:40,border:'5px solid #e0e0e0',
+                    borderTop:'5px solid #005c42',borderRadius:'50%',
+                    animation:'spin 1s linear infinite'}}/>
+                {/* Auto-submit pfSense access grant to restore internet without re-scan */}
+                <form id="resumeForm" method="POST"
+                    action="http://172.31.98.1:8002/index.php?zone=main_zone&redirurl=http%3A%2F%2F124.43.216.136%3A45080%2Fportal%2Fsuccess">
+                    <input type="hidden" name="redirurl" value="http://124.43.216.136:45080/portal/success" />
+                    <input type="hidden" name="zone"   value="main_zone" />
+                    <input type="hidden" name="accept" value="Continue" />
+                </form>
+                <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
             </div>
         </div>
     );
