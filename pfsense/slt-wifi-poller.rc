@@ -1,0 +1,27 @@
+#!/bin/sh
+# PROVIDE: slt_wifi_poller
+# REQUIRE: LOGIN
+# Install to: /usr/local/etc/rc.d/slt-wifi-poller.sh
+# Enable with: echo 'slt_wifi_poller_enable="YES"' >> /etc/rc.conf
+. /etc/rc.subr
+name="slt_wifi_poller"
+rcvar="slt_wifi_poller_enable"
+command="/usr/local/bin/slt-wifi-poller.sh"
+pidfile="/var/run/slt-wifi-poller.pid"
+start_cmd="slt_wifi_poller_start"
+stop_cmd="slt_wifi_poller_stop"
+slt_wifi_poller_start() {
+    echo "Starting SLT Wi-Fi poller..."
+    /usr/local/bin/slt-wifi-poller.sh >> /var/log/slt-wifi-poller.log 2>&1 &
+    echo $! > $pidfile
+    echo "Started with PID $(cat $pidfile)"
+}
+slt_wifi_poller_stop() {
+    if [ -f $pidfile ]; then
+        kill $(cat $pidfile) 2>/dev/null
+        rm -f $pidfile
+        echo "Stopped SLT Wi-Fi poller"
+    fi
+}
+load_rc_config $name
+run_rc_command "$1"
