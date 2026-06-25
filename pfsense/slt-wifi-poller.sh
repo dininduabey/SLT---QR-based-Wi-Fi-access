@@ -8,6 +8,7 @@ echo "[$(date)] Poller started" >> $LOG
 
 while true; do
     pfctl -t cpzoneid_2_cpips -T add 124.43.216.136 8.8.8.8 8.8.4.4 2>/dev/null
+    printf "block drop in quick on re1 proto tcp from any to any port 853\nblock drop in quick on re1 proto udp from any to any port 853\n" > /tmp/block853.conf; pfctl -a slt_block_dot -f /tmp/block853.conf 2>/dev/null
     RESPONSE=$(curl -s --max-time 10 "${SERVER}/api/admin/pfsense-poll" 2>/dev/null)
     if echo "$RESPONSE" | grep -q '"clear":true'; then
         php -r "
