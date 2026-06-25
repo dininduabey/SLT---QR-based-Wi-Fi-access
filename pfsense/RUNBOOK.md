@@ -57,13 +57,20 @@ Captive nginx on 8002. DB: /var/db/captiveportalmain_zone.db.
   pfctl -t cpzoneid_2_cpips -T show
   sqlite3 /var/db/captiveportalmain_zone.db "SELECT ip,mac,username FROM captiveportal;"
 
+## FIXED (handled by the poller, self-healing every cycle)
+- Walled garden wipe: poller re-adds 124.43.216.136 / 8.8.8.8 / 8.8.4.4 to the
+  cpzoneid_2_cpips table every cycle, so the portal can never silently break.
+- Android Private DNS: poller blocks DNS-over-TLS (port 853) via the slt_block_dot
+  anchor, forcing Android (default 'Automatic' Private DNS) to fall back to regular
+  DNS. TESTED working on a real Android with Private DNS on Automatic.
+
 ## KNOWN OPEN ISSUES (not yet fixed)
-1. Android Private DNS (default Automatic) blocks connection - phones can't resolve.
-   Fix needed: pfSense DNS redirect (force port 53 to pfSense) + block port 853 DoT.
-2. Top-up counter not reset on pfSense side - phone can re-disconnect after top-up
+1. Top-up counter not reset on pfSense side - phone can re-disconnect after top-up
    if already near global quota. Less likely at large limits.
-3. Walled garden self-heal line not yet added to poller.
-4. Only tested up to ~6 phones. Not validated at full event scale.
+2. CNA popup still appears - cannot be suppressed (Aruba is open-bridge only, no
+   ClearPass; pfSense captive portal inherently redirects the OS probe). Handled by
+   the Step 1 / Step 2 instruction page on the QR display screen instead.
+3. Only tested up to ~6 phones. Not validated at full event scale.
 
 ## Verified working (real phone tests)
 - QR -> phone -> OTP -> internet on iPhones
