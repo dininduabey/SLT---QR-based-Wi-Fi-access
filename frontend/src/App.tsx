@@ -123,10 +123,30 @@ const QrDisplayPage = () => {
     return (
         <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
             minHeight:'100vh', background:'#0f172a', color:'white', fontFamily:'sans-serif', padding:'2rem' }}>
+            <style>{`@keyframes wifiPulse { 0%,100%{opacity:0.25} 50%{opacity:1} }`}</style>
             <p style={{ fontSize:'13px', color:'#64748b', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:'4px' }}>
-                {eventId}
+                {eventName || 'SLT Mobitel'}
             </p>
-            <h1 style={{ fontSize:'26px', fontWeight:700, marginBottom:'2rem' }}>{eventName || 'SLT Wi-Fi Access'}</h1>
+            <h1 style={{ fontSize:'28px', fontWeight:800, marginBottom:'2.5rem', color:'#fff' }}>Free Event Wi-Fi</h1>
+            <div style={{ display:'flex', alignItems:'flex-start', gap:'3rem', flexWrap:'wrap', justifyContent:'center' }}>
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', maxWidth:'260px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'1.25rem' }}>
+            <span style={{ background:'#10b981', color:'#04231a', width:'34px', height:'34px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:'17px' }}>1</span>
+            <span style={{ fontSize:'19px', fontWeight:700 }}>Connect</span>
+            </div>
+            <svg width="150" height="120" viewBox="0 0 100 80" style={{ marginBottom:'1.25rem' }}>
+            <path style={{animation:'wifiPulse 1.8s ease-in-out infinite', animationDelay:'0.5s'}} d="M10 30 A 60 60 0 0 1 90 30" fill="none" stroke="#10b981" strokeWidth="6" strokeLinecap="round"/>
+            <path style={{animation:'wifiPulse 1.8s ease-in-out infinite', animationDelay:'0.25s'}} d="M22 45 A 42 42 0 0 1 78 45" fill="none" stroke="#10b981" strokeWidth="6" strokeLinecap="round"/>
+            <path style={{animation:'wifiPulse 1.8s ease-in-out infinite'}} d="M34 58 A 24 24 0 0 1 66 58" fill="none" stroke="#10b981" strokeWidth="6" strokeLinecap="round"/>
+            <circle style={{animation:'wifiPulse 1.8s ease-in-out infinite'}} cx="50" cy="70" r="6" fill="#10b981"/>
+            </svg>
+            <p style={{ fontSize:'15px', color:'#cbd5e1', textAlign:'center', lineHeight:1.5 }}>Open Wi-Fi settings and join<br/><span style={{ color:'#fff', fontWeight:700, fontSize:'17px' }}>&ldquo;SLT WiFi&rdquo;</span></p>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', maxWidth:'320px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'1.25rem' }}>
+            <span style={{ background:'#10b981', color:'#04231a', width:'34px', height:'34px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:'17px' }}>2</span>
+            <span style={{ fontSize:'19px', fontWeight:700 }}>Scan with Camera</span>
+            </div>
 
             {qrData ? (
                 <>
@@ -144,8 +164,10 @@ const QrDisplayPage = () => {
                 <p style={{ color:'#475569' }}>Loading...</p>
             )}
 
-            <p style={{ marginTop:'2.5rem', color:'#1e3a5f', fontSize:'13px', fontWeight:600, textAlign:'center' }}>
-                Connect to SLT WiFi → Scan QR → Enter your mobile number
+            </div>
+            </div>
+            <p style={{ marginTop:'2.5rem', color:'#64748b', fontSize:'14px', fontWeight:600, textAlign:'center' }}>
+                Point your phone camera at the QR code — no app needed
             </p>
         </div>
     );
