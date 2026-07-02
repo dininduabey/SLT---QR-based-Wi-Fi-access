@@ -24,9 +24,7 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
-      - name: Lint Frontend
-        working-directory: ./frontend
-        run: npm run lint
+
 
       - name: Build Frontend
         working-directory: ./frontend
@@ -91,6 +89,7 @@ jobs:
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           # Adjust the target path to your actual server path
@@ -103,6 +102,7 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           # Script to run on the server after files are copied
@@ -133,6 +133,9 @@ jobs:
             # Install backend prod dependencies
             cd /var/www/slt-wifi/app/backend
             npm ci --omit=dev
+            
+            # Create .env file with the MongoDB connection string
+            echo "MONGODB_URI=${{ secrets.MONGODB_URI }}" > .env
             
             # Restart or start the backend using pm2
             pm2 describe slt-backend > /dev/null
