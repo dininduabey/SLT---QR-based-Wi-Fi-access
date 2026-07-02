@@ -1,0 +1,151 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Using Node 20 as it's the current LTS
+
+      # --- Frontend CI ---
+      - name: Install Frontend Dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Lint Frontend
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: Build Frontend
+        working-directory: ./frontend
+        run: npm run build
+
+      # --- Backend CI ---
+      - name: Install Backend Dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Build Backend
+        working-directory: ./backend
+        run: npm run build
+
+      # --- Upload Artifacts for Deployment ---
+      - name: Upload Frontend Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/dist/
+
+      - name: Upload Backend Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-build
+          path: backend/dist/
+
+      - name: Upload Backend Package Files
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-package
+          path: |
+            backend/package.json
+            backend/package-lock.json
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    # Only run deployment on pushes to main (not on PRs)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Download Frontend Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend-build
+
+      - name: Download Backend Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-build
+          path: backend-build
+
+      - name: Download Backend Package Files
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-package
+          path: backend-package
+
+      - name: Deploy to Server via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          # Adjust the target path to your actual server path
+          # Assuming /var/www/slt-wifi is the root directory on the server
+          target: "/var/www/slt-wifi"
+          source: "frontend-build/*,backend-build/*,backend-package/*"
+          strip_components: 0
+
+      - name: Restart Backend Services via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          # Script to run on the server after files are copied
+          script: |
+            cd /var/www/slt-wifi/backend-package
+            
+            # Install production dependencies only
+            npm ci --omit=dev
+            
+            # Assuming pm2 is used to manage the backend process
+            # Ensure pm2 is installed on the server: npm install -g pm2
+            
+            # If the process doesn't exist, this will start it. If it does, it restarts it.
+            # Adjust the entry file 'dist/server.js' if necessary (we uploaded it to backend-build)
+            # Actually, let's move everything to a proper structure on the server.
+            
+            # Setup directory structure
+            mkdir -p /var/www/slt-wifi/app/backend
+            mkdir -p /var/www/slt-wifi/app/frontend
+            
+            # Move backend files
+            cp -r /var/www/slt-wifi/backend-build/* /var/www/slt-wifi/app/backend/
+            cp /var/www/slt-wifi/backend-package/package*.json /var/www/slt-wifi/app/backend/
+            
+            # Move frontend files (Nginx should serve from this directory)
+            cp -r /var/www/slt-wifi/frontend-build/* /var/www/slt-wifi/app/frontend/
+            
+            # Install backend prod dependencies
+            cd /var/www/slt-wifi/app/backend
+            npm ci --omit=dev
+            
+            # Restart or start the backend using pm2
+            pm2 describe slt-backend > /dev/null
+            if [ $? -eq 0 ]; then
+                pm2 restart slt-backend
+            else
+                pm2 start server.js --name "slt-backend"
+            fi
+            
+            # Save pm2 list so it restarts on system reboot
+            pm2 save
+            
+            # Clean up the temporary upload directories
+            rm -rf /var/www/slt-wifi/frontend-build
+            rm -rf /var/www/slt-wifi/backend-build
+            rm -rf /var/www/slt-wifi/backend-package
